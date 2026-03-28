@@ -2,6 +2,9 @@ const { ipcMain, shell } = require('electron')
 const { v4: uuidv4 } = require('uuid')
 const keytar = require('keytar')
 const store = require('./store')
+
+let nice
+try { nice = require('@napi-rs/nice') } catch (_) { nice = null }
 const pm = require('./preset-manager')
 const om = require('./output-manager')
 const { captureScreenshots } = require('./screenshot-engine')
@@ -55,6 +58,9 @@ function register(mainWindow) {
   ipcMain.handle('capture:start', async (_, job) => {
     const jobId = job.id || uuidv4()
     sendJobUpdate(mainWindow, { id: jobId, status: 'running' })
+    if (nice) {
+      try { nice.setThreadPriority(nice.ThreadPriority.TimeCritical) } catch (_) {}
+    }
     const log = (line) => sendLog(mainWindow, line)
 
     const settings = store.getSettings()

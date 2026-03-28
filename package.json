@@ -10,11 +10,14 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "testMatch": ["**/tests/**/*.test.js"]
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
   },
   "dependencies": {
     "@duckduckgo/autoconsent": "^14.66.0",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@napi-rs/nice": "^1.1.1",
     "archiver": "^7.0.1",
     "keytar": "^7.9.0",
     "playwright": "1.41",
