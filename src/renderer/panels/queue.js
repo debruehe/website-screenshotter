@@ -1,0 +1,1 @@
+window.queuePanel = { init() {}, handleUpdate() {} }
