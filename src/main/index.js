@@ -47,14 +47,14 @@ app.whenReady().then(async () => {
       'install', 'chromium'
     ])
 
-    proc.stderr.on('data', data => {
+    const progressListener = data => {
       const line = data.toString()
       const match = line.match(/(\d+)%/)
-      if (match) {
-        mainWindow.webContents.send('setup:progress', { percent: parseInt(match[1]) })
-      }
+      if (match) mainWindow.webContents.send('setup:progress', { percent: parseInt(match[1]) })
       mainWindow.webContents.send('setup:progress', { status: line.trim() })
-    })
+    }
+    proc.stdout && proc.stdout.on('data', progressListener)
+    proc.stderr.on('data', progressListener)
 
     proc.on('close', code => {
       if (code === 0) {
@@ -65,20 +65,26 @@ app.whenReady().then(async () => {
     })
   }
 
+  let installRunning = false
   const { ipcMain } = require('electron')
   ipcMain.on('setup:retry', () => {
+    if (installRunning) return
+    installRunning = true
     const proc = execFile('node', [
       path.join(require.resolve('playwright/package.json'), '../../cli.js'),
       'install', 'chromium'
     ])
     mainWindow.webContents.send('setup:progress', { show: true, status: 'Retrying download…', percent: 0 })
-    proc.stderr.on('data', data => {
+    const retryListener = data => {
       const line = data.toString()
       const match = line.match(/(\d+)%/)
       if (match) mainWindow.webContents.send('setup:progress', { percent: parseInt(match[1]) })
       mainWindow.webContents.send('setup:progress', { status: line.trim() })
-    })
+    }
+    proc.stdout && proc.stdout.on('data', retryListener)
+    proc.stderr.on('data', retryListener)
     proc.on('close', code => {
+      installRunning = false
       if (code === 0) mainWindow.webContents.send('setup:progress', { show: false })
       else mainWindow.webContents.send('setup:progress', { error: true, status: 'Download failed. Check your internet connection.' })
     })

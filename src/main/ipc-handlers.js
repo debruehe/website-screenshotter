@@ -59,7 +59,8 @@ function register(mainWindow) {
     const jobId = job.id || uuidv4()
     sendJobUpdate(mainWindow, { id: jobId, status: 'running' })
     if (nice) {
-      try { nice.setThreadPriority(nice.ThreadPriority.TimeCritical) } catch (_) {}
+      // Lower nice value = higher priority. -10 is a significant boost without requiring root.
+      try { nice.nice(-10) } catch (_) {}
     }
     const log = (line) => sendLog(mainWindow, line)
 
