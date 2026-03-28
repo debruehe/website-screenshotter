@@ -1,6 +1,7 @@
 window.logComponent = {
   appendLog(line) {
     const logEl = document.getElementById('log-output')
+    if (!logEl) return
     const div = document.createElement('div')
     div.textContent = line
     logEl.appendChild(div)

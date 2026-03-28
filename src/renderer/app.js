@@ -9,14 +9,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 })
 
 // Log stream
-window.api.onLog(line => {
-  const logEl = document.getElementById('log-output')
-  const div = document.createElement('div')
-  div.textContent = line
-  logEl.appendChild(div)
-  logEl.scrollTop = logEl.scrollHeight
-  while (logEl.children.length > 500) logEl.removeChild(logEl.firstChild)
-})
+window.api.onLog(line => window.logComponent.appendLog(line))
 
 // Job status updates (for queue panel)
 window.api.onJobUpdate(update => {
