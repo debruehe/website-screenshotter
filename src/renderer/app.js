@@ -22,3 +22,13 @@ window.capturePanel && window.capturePanel.init()
 window.queuePanel && window.queuePanel.init()
 window.historyPanel && window.historyPanel.init()
 window.settingsPanel && window.settingsPanel.init()
+
+// First-launch setup progress
+window.api.onSetupProgress(data => {
+  const modal = document.getElementById('setup-modal')
+  if (data.show === false) { modal.style.display = 'none'; return }
+  modal.style.display = 'flex'
+  if (data.status) document.getElementById('setup-status').textContent = data.status
+  if (data.percent !== undefined) document.getElementById('setup-progress').style.width = data.percent + '%'
+  if (data.error) document.getElementById('setup-retry').style.display = 'block'
+})

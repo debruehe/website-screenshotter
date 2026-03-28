@@ -22,10 +22,67 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  // Ensure Playwright Chromium is installed
-  const { execSync } = require('child_process')
-  try { execSync('npx playwright install chromium', { stdio: 'pipe' }) } catch (_) {}
   createWindow()
+
+  // Check if Playwright Chromium needs installation
+  const { execFile } = require('child_process')
+  const path = require('path')
+
+  function isChromiumInstalled() {
+    try {
+      const { chromium } = require('playwright')
+      return !!chromium.executablePath()
+    } catch {
+      return false
+    }
+  }
+
+  if (!isChromiumInstalled()) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow.webContents.send('setup:progress', { show: true, status: 'Downloading browser engine…', percent: 0 })
+    })
+
+    const proc = execFile('node', [
+      path.join(require.resolve('playwright/package.json'), '../../cli.js'),
+      'install', 'chromium'
+    ])
+
+    proc.stderr.on('data', data => {
+      const line = data.toString()
+      const match = line.match(/(\d+)%/)
+      if (match) {
+        mainWindow.webContents.send('setup:progress', { percent: parseInt(match[1]) })
+      }
+      mainWindow.webContents.send('setup:progress', { status: line.trim() })
+    })
+
+    proc.on('close', code => {
+      if (code === 0) {
+        mainWindow.webContents.send('setup:progress', { show: false })
+      } else {
+        mainWindow.webContents.send('setup:progress', { error: true, status: 'Download failed. Check your internet connection.' })
+      }
+    })
+  }
+
+  const { ipcMain } = require('electron')
+  ipcMain.on('setup:retry', () => {
+    const proc = execFile('node', [
+      path.join(require.resolve('playwright/package.json'), '../../cli.js'),
+      'install', 'chromium'
+    ])
+    mainWindow.webContents.send('setup:progress', { show: true, status: 'Retrying download…', percent: 0 })
+    proc.stderr.on('data', data => {
+      const line = data.toString()
+      const match = line.match(/(\d+)%/)
+      if (match) mainWindow.webContents.send('setup:progress', { percent: parseInt(match[1]) })
+      mainWindow.webContents.send('setup:progress', { status: line.trim() })
+    })
+    proc.on('close', code => {
+      if (code === 0) mainWindow.webContents.send('setup:progress', { show: false })
+      else mainWindow.webContents.send('setup:progress', { error: true, status: 'Download failed. Check your internet connection.' })
+    })
+  })
 })
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
