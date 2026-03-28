@@ -193,10 +193,14 @@ window.capturePanel = {
   async startCapture() {
     const job = this.buildJob()
     if (!job.url) return alert('Please enter a URL')
-    document.getElementById('cap-start').disabled = true
-    document.getElementById('cap-start').textContent = '⏳ Capturing...'
-    await window.api.startCapture(job)
-    document.getElementById('cap-start').disabled = false
-    document.getElementById('cap-start').textContent = '▶ Start Capture'
+    const btn = document.getElementById('cap-start')
+    btn.disabled = true
+    btn.textContent = '⏳ Capturing...'
+    try {
+      await window.api.startCapture(job)
+    } finally {
+      btn.disabled = false
+      btn.textContent = '▶ Start Capture'
+    }
   }
 }

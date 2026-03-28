@@ -62,7 +62,7 @@ window.settingsPanel = {
         <input type="number" value="${d.width}" data-did="${d.id}" data-field="width" style="width:70px">
         <span style="color:var(--text-muted)">×</span>
         <input type="number" value="${d.height}" data-did="${d.id}" data-field="height" style="width:70px">
-        <button onclick="window.settingsPanel.deleteDevice('${d.id}')" style="background:none;border:none;color:#f96;cursor:pointer;padding:0 4px">×</button>
+        <button data-delete-device="${d.id}" style="background:none;border:none;color:#f96;cursor:pointer;padding:0 4px">×</button>
       </div>
     `).join('')
   },
@@ -73,6 +73,11 @@ window.settingsPanel = {
   },
 
   bindEvents() {
+    document.getElementById('s-devices').addEventListener('click', e => {
+      const btn = e.target.closest('[data-delete-device]')
+      if (btn) this.deleteDevice(btn.dataset.deleteDevice)
+    })
+
     document.getElementById('s-quiet').addEventListener('change', e => {
       document.getElementById('s-quiet-opts').style.display = e.target.checked ? 'block' : 'none'
     })

@@ -1,3 +1,12 @@
+function escHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 window.queuePanel = {
   jobs: [],
 
@@ -14,12 +23,15 @@ window.queuePanel = {
       this.jobs = this.jobs.filter(j => j.status === 'pending' || j.status === 'running')
       this.render()
     })
+    document.getElementById('q-list').addEventListener('click', e => {
+      const link = e.target.closest('[data-open-folder]')
+      if (link) window.api.openFolder(link.dataset.openFolder)
+    })
   },
 
   addJob(job) {
     this.jobs.unshift({ ...job, status: 'pending' })
     this.render()
-    // Switch to queue panel
     document.querySelector('[data-panel="queue"]').click()
   },
 
@@ -36,20 +48,20 @@ window.queuePanel = {
       list.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px">No jobs yet</p>'
       return
     }
-    list.innerHTML = this.jobs.map(j => `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between">
-          <span style="font-weight:500">${j.url || '—'}</span>
-          <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${
-            j.status === 'done' ? '#2a4a2a' : j.status === 'error' ? '#4a2a2a' : j.status === 'running' ? '#2a3a4a' : '#333'
-          };color:${
-            j.status === 'done' ? '#6a9f6a' : j.status === 'error' ? '#f96' : j.status === 'running' ? '#4f9cf9' : '#888'
-          }">${j.status}</span>
+    list.innerHTML = this.jobs.map(j => {
+      const statusBg = j.status === 'done' ? '#2a4a2a' : j.status === 'error' ? '#4a2a2a' : j.status === 'running' ? '#2a3a4a' : '#333'
+      const statusColor = j.status === 'done' ? '#6a9f6a' : j.status === 'error' ? '#f96' : j.status === 'running' ? '#4f9cf9' : '#888'
+      return `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-weight:500">${escHtml(j.url || '—')}</span>
+            <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${statusBg};color:${statusColor}">${escHtml(j.status)}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${escHtml(j.device || '')} · ${escHtml(j.mode || '')}</div>
+          ${j.error ? `<div style="color:#f96;font-size:11px;margin-top:4px">${escHtml(j.error)}</div>` : ''}
+          ${j.outputFolder ? `<div data-open-folder="${escHtml(j.outputFolder)}" style="font-size:11px;color:var(--accent);cursor:pointer;margin-top:4px">Open folder →</div>` : ''}
         </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${j.device || ''} · ${j.mode || ''}</div>
-        ${j.error ? `<div style="color:#f96;font-size:11px;margin-top:4px">${j.error}</div>` : ''}
-        ${j.outputFolder ? `<div style="font-size:11px;color:var(--accent);cursor:pointer;margin-top:4px" onclick="window.api.openFolder('${j.outputFolder}')">Open folder →</div>` : ''}
-      </div>
-    `).join('')
+      `
+    }).join('')
   }
 }
