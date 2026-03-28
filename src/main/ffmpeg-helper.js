@@ -11,6 +11,7 @@ function getFfmpegPath(override) {
  */
 function resolveScreenDeviceIndex(ffmpegPath) {
   try {
+    // Empty input path is intentional: FFmpeg lists devices then exits non-zero; we only need stderr.
     const result = spawnSync(ffmpegPath, ['-f', 'avfoundation', '-list_devices', 'true', '-i', ''], {
       encoding: 'utf8',
       timeout: 5000
@@ -20,7 +21,8 @@ function resolveScreenDeviceIndex(ffmpegPath) {
     const lines = output.split('\n')
     // Look for lines like: [AVFoundation indev @ ...] [0] Capture screen 0
     for (const line of lines) {
-      if (line.includes('Capture screen') || line.includes('screen')) {
+      // 'Capture screen' is the canonical avfoundation screen device name
+      if (line.includes('Capture screen')) {
         const match = line.match(/\[(\d+)\]/)
         if (match) return match[1]
       }
@@ -62,7 +64,10 @@ function buildCaptureArgs(deviceIndex, width, height, scaleFactor, outputPath) {
  */
 function spawnFfmpeg(ffmpegPath, args, onLog) {
   const proc = spawn(ffmpegPath, args)
-  proc.stderr.on('data', data => onLog(data.toString()))
+  if (typeof onLog === 'function') {
+    proc.stderr.on('data', data => onLog(data.toString()))
+  }
+  proc.on('error', err => { if (typeof onLog === 'function') onLog(`FFmpeg spawn error: ${err.message}`) })
   return proc
 }
 
