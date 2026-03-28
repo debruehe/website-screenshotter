@@ -3,6 +3,9 @@ const path = require('path')
 const { screen } = require('electron')
 const authHandler = require('./auth-handler')
 const { getSectionScrollStops } = require('./section-analyzer')
+
+// Path to the autoconsent browser-side init script
+const AUTOCONSENT_SCRIPT = require.resolve('@duckduckgo/autoconsent/dist/autoconsent.playwright.js')
 const { runHoverInteractions } = require('./hover-engine')
 const { getFfmpegPath, resolveScreenDeviceIndex, buildCaptureArgs, spawnFfmpeg } = require('./ffmpeg-helper')
 const { videoFilename } = require('./output-manager')
@@ -73,6 +76,10 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
     if (httpCreds) contextOptions.httpCredentials = httpCreds
 
     const context = await browser.newContext(contextOptions)
+
+    // Inject autoconsent as init script — consent banner handled visibly in recording
+    try { await context.addInitScript({ path: AUTOCONSENT_SCRIPT }) } catch (_) {}
+
     const page = await context.newPage()
 
     // Navigate and auth
@@ -88,19 +95,17 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
     // Start FFmpeg recording
     const outputPath = path.join(outputFolder, videoFilename(device.id))
     const args = buildCaptureArgs(screenIndex, device.width, device.height, scaleFactor, outputPath)
+
+    if (typeof onLog === 'function') onLog('Starting FFmpeg screen capture...')
+    if (typeof onLog === 'function') onLog('⚠️  If no video is produced, grant Screen Recording permission to Electron in System Settings → Privacy & Security.')
+
     const ffmpegProc = spawnFfmpeg(ffmpegPath, args, line => {
       if (typeof onLog === 'function') onLog(`FFmpeg: ${line}`)
     })
 
-    // Wait for FFmpeg to initialize
-    await new Promise(r => setTimeout(r, 500))
-
-    // Autoconsent visible on screen (recorded)
-    try {
-      const { autoConsent } = require('@duckduckgo/autoconsent/dist/autoconsent.playwright')
-      await autoConsent(page)
-      if (typeof onLog === 'function') onLog('Cookie consent handled')
-    } catch (_) {}
+    // Wait for FFmpeg to initialize and autoconsent to run
+    await new Promise(r => setTimeout(r, 1500))
+    if (typeof onLog === 'function') onLog('Cookie consent handled (via init script)')
     await page.waitForTimeout(500)
 
     // Hero wait
@@ -146,7 +151,8 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
     if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
     if (typeof onFile === 'function') onFile(outputPath)
   } finally {
-    await browser.close()
+    // Suppress TargetClosedError — browser close can interrupt pending page.evaluate callbacks
+    try { await browser.close() } catch (_) {}
   }
 }
 
