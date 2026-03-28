@@ -20,7 +20,7 @@ function quietDown(appNames, onLog) {
   const quit = []
   for (const app of appNames) {
     if (quitApp(app)) {
-      onLog(`Quiet mode: quit ${app}`)
+      if (typeof onLog === 'function') onLog(`Quiet mode: quit ${app}`)
       quit.push(app)
     }
   }
@@ -33,7 +33,7 @@ function quietDown(appNames, onLog) {
 function relaunchAll(appNames, onLog) {
   for (const app of appNames) {
     relaunchApp(app)
-    onLog(`Quiet mode: relaunched ${app}`)
+    if (typeof onLog === 'function') onLog(`Quiet mode: relaunched ${app}`)
   }
 }
 

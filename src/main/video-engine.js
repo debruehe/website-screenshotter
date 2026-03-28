@@ -137,8 +137,10 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
     await page.waitForTimeout(1000)
 
     // Stop FFmpeg
-    ffmpegProc.stdin.write('q')
-    await new Promise(r => setTimeout(r, 2000))
+    if (ffmpegProc.stdin && !ffmpegProc.stdin.destroyed) {
+      ffmpegProc.stdin.write('q')
+      await new Promise(r => setTimeout(r, 2000))
+    }
     ffmpegProc.kill('SIGINT')
 
     if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
