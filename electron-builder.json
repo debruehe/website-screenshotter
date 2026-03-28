@@ -9,11 +9,5 @@
   "files": [
     "src/**/*",
     "node_modules/**/*"
-  ],
-  "extraResources": [
-    {
-      "from": "node_modules/@ffmpeg-installer/darwin-x64/ffmpeg",
-      "to": "ffmpeg"
-    }
   ]
 }
