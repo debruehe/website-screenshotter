@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Screenshotter</title>
+  <link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <nav>
+        <button class="nav-btn active" data-panel="capture">📷 Capture</button>
+        <button class="nav-btn" data-panel="queue">📋 Queue</button>
+        <button class="nav-btn" data-panel="history">🕐 History</button>
+        <button class="nav-btn" data-panel="settings">⚙️ Settings</button>
+      </nav>
+    </aside>
+    <main id="content">
+      <div id="panel-capture" class="panel active"></div>
+      <div id="panel-queue" class="panel"></div>
+      <div id="panel-history" class="panel"></div>
+      <div id="panel-settings" class="panel"></div>
+    </main>
+  </div>
+  <footer id="log-area">
+    <div id="log-output"></div>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "name": "web-screenshotter",
+  "version": "1.0.0",
+  "description": "macOS app for retina website screenshots and scroll videos",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "jest --testPathPattern=tests/",
+    "build": "electron-builder --mac"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"]
+  },
+  "dependencies": {
+    "@duckduckgo/autoconsent": "^14.66.0",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "archiver": "^7.0.1",
+    "electron": "^28.3.3",
+    "keytar": "^7.9.0",
+    "playwright": "1.41",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "electron-builder": "^26.8.1",
+    "jest": "^30.3.0"
+  }
+}

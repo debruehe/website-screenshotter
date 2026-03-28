@@ -1,0 +1,19 @@
+{
+  "appId": "com.yourname.webscreenshotter",
+  "productName": "Web Screenshotter",
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": "dmg",
+    "identity": null
+  },
+  "files": [
+    "src/**/*",
+    "node_modules/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "node_modules/@ffmpeg-installer/darwin-x64/ffmpeg",
+      "to": "ffmpeg"
+    }
+  ]
+}
