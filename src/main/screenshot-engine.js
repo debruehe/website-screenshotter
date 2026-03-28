@@ -1,7 +1,9 @@
 const { chromium } = require('playwright')
 const path = require('path')
 const authHandler = require('./auth-handler')
-const { getSectionScrollStops } = require('./section-analyzer')
+const { computeScrollStops } = require('./scroll-settings')
+const { getStorageState } = require('./session-manager')
+const { getForUrl: getHttpAuth } = require('./http-auth')
 
 const DEFAULT_CSS = `
 * { scrollbar-width: none !important; }
@@ -9,8 +11,6 @@ const DEFAULT_CSS = `
 * { -webkit-tap-highlight-color: transparent !important; }
 `
 
-// Path to the autoconsent browser-side init script
-const AUTOCONSENT_SCRIPT = require.resolve('@duckduckgo/autoconsent/dist/autoconsent.playwright.js')
 
 /**
  * Scrolls the full page to trigger lazy-loaded images, then returns to top.
@@ -52,13 +52,17 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile) {
       colorScheme: job.darkMode ? 'dark' : 'light'
     }
 
-    const httpCreds = authHandler.buildHttpCredentials(job.auth)
+    const savedHttpAuth = getHttpAuth(job.url)
+    const httpCreds = savedHttpAuth || authHandler.buildHttpCredentials(job.auth)
     if (httpCreds) contextOptions.httpCredentials = httpCreds
 
-    const context = await browser.newContext(contextOptions)
+    const storageState = getStorageState(job.url)
+    if (storageState) {
+      contextOptions.storageState = storageState
+      onLog(`Using saved session for ${new URL(job.url).hostname}`)
+    }
 
-    // Inject autoconsent as init script — runs in page context automatically
-    try { await context.addInitScript({ path: AUTOCONSENT_SCRIPT }) } catch (_) {}
+    const context = await browser.newContext(contextOptions)
 
     const page = await context.newPage()
 
@@ -93,9 +97,6 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile) {
         // Inject CSS
         await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
 
-        // Give autoconsent init script time to handle any cookie banner
-        await page.waitForTimeout(1500)
-
         // Scroll page to trigger lazy-loaded images, then return to top
         await triggerLazyLoad(page)
         await page.waitForTimeout(500)
@@ -113,7 +114,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile) {
           onFile(filePath)
         } else {
           // Single-viewport multi-shot: screenshot at each section stop
-          const stops = await getSectionScrollStops(page, device.height)
+          const stops = await computeScrollStops(page, device.height, url)
           onLog(`Viewport stops: ${stops.join(', ')}`)
 
           for (let i = 0; i < stops.length; i++) {

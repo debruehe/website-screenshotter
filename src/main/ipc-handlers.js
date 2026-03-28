@@ -1,14 +1,17 @@
 const { ipcMain, shell } = require('electron')
+const { getForUrl: getScrollSettings, setForUrl: setScrollSettings } = require('./scroll-settings')
+const { getForUrl: getHttpAuth, setForUrl: setHttpAuth } = require('./http-auth')
 const { v4: uuidv4 } = require('uuid')
 const keytar = require('keytar')
 const store = require('./store')
+const { getStorageState, hasSession, clearSession } = require('./session-manager')
 
 let nice
 try { nice = require('@napi-rs/nice') } catch (_) { nice = null }
 const pm = require('./preset-manager')
 const om = require('./output-manager')
 const { captureScreenshots } = require('./screenshot-engine')
-const { captureVideo } = require('./video-engine')
+const { captureVideo, captureVideoManual } = require('./video-engine')
 const { quietDown, relaunchAll } = require('./quiet-mode')
 
 const KEYCHAIN_SERVICE = 'WebScreenshotter'
@@ -101,6 +104,8 @@ function register(mainWindow) {
 
         if (job.mode === 'screenshot') {
           await captureScreenshots(job, device, sessionFolder, log, onFile)
+        } else if (job.manualMode) {
+          await captureVideoManual(job, device, sessionFolder, log, onFile, settings.ffmpegPath)
         } else {
           await captureVideo(job, device, sessionFolder, log, onFile, settings.ffmpegPath)
         }
@@ -134,6 +139,101 @@ function register(mainWindow) {
   ipcMain.handle('capture:cancel', (_, jobId) => {
     // Future: cancellation token support
     sendLog(mainWindow, `Cancel requested for job ${jobId} (not yet implemented)`)
+  })
+
+  // Session management (storageState — cookies saved from a manual browser session)
+  ipcMain.handle('session:has', (_, { url }) => hasSession(url))
+
+  ipcMain.handle('session:clear', (_, { url }) => {
+    clearSession(url)
+    const hostname = new URL(url).hostname
+    sendLog(mainWindow, `Session cleared for ${hostname}`)
+    return { ok: true }
+  })
+
+  ipcMain.handle('session:setup', async (_, { url }) => {
+    const { chromium } = require('playwright')
+    const path = require('path')
+    const fs = require('fs')
+    const { SESSION_DIR } = require('./session-manager')
+
+    fs.mkdirSync(SESSION_DIR, { recursive: true })
+    const hostname = new URL(url).hostname
+    const outFile = path.join(SESSION_DIR, `${hostname}.json`)
+
+    sendLog(mainWindow, `Browser opening for ${hostname} — accept cookies / log in, then click "Save Session & Close"`)
+
+    const browser = await chromium.launch({
+      headless: false,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    })
+
+    browser.on('disconnected', () => {
+      if (!saved) sendLog(mainWindow, 'Session browser disconnected')
+    })
+
+    // Use the default context via browser.newPage() — avoids context creation issues in Electron
+    const page = await browser.newPage()
+    const context = page.context()
+    let saved = false
+
+    // Expose the save function to the page
+    await page.exposeFunction('__wsSaveSession', async () => {
+      try {
+        const state = await context.storageState()
+        fs.writeFileSync(outFile, JSON.stringify(state, null, 2))
+        saved = true
+        sendLog(mainWindow, `Session saved for ${hostname}`)
+      } catch (e) {
+        sendLog(mainWindow, `Failed to save session: ${e.message}`)
+      }
+      try { await browser.close() } catch (_) {}
+    })
+
+    // Re-inject the floating Save button on every page load
+    const injectSaveBtn = () => {
+      page.evaluate(`
+        (function() {
+          if (document.getElementById('__wsSaveBtn')) return;
+          var btn = document.createElement('button');
+          btn.id = '__wsSaveBtn';
+          btn.textContent = '\\u2705 Save Session & Close';
+          btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;padding:12px 20px;background:#4f9cf9;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.4);font-family:-apple-system,sans-serif';
+          btn.addEventListener('click', function(){ window.__wsSaveSession(); });
+          document.body.appendChild(btn);
+        })()
+      `).catch(() => {})
+    }
+
+    page.on('load', injectSaveBtn)
+
+    try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }) } catch (_) {}
+
+    await new Promise(resolve => browser.on('disconnected', resolve))
+
+    if (!saved) {
+      sendLog(mainWindow, 'Browser closed without saving — use the "Save Session & Close" button next time')
+    }
+
+    return { ok: saved, hostname }
+  })
+
+  // Scroll settings (per-hostname)
+  ipcMain.handle('scroll:get', (_, { url }) => {
+    try { return getScrollSettings(url) } catch (_) { return null }
+  })
+  ipcMain.handle('scroll:set', (_, { url, settings }) => {
+    setScrollSettings(url, settings)
+    return { ok: true }
+  })
+
+  // HTTP Basic Auth (htaccess) per hostname
+  ipcMain.handle('httpauth:get', (_, { url }) => {
+    try { return getHttpAuth(url) } catch (_) { return null }
+  })
+  ipcMain.handle('httpauth:set', (_, { url, credentials }) => {
+    setHttpAuth(url, credentials)
+    return { ok: true }
   })
 }
 

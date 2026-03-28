@@ -33,26 +33,32 @@ function resolveScreenDeviceIndex(ffmpegPath) {
 
 /**
  * Builds the FFmpeg args for screen capture with crop.
+ * Uses macOS VideoToolbox hardware H.264 encoder so encoding runs on dedicated
+ * silicon — zero CPU competition with the browser during scroll animation.
  * @param {string} deviceIndex - avfoundation screen index
  * @param {number} width - viewport width in logical pixels
  * @param {number} height - viewport height in logical pixels
  * @param {number} scaleFactor - display scale factor (2 for Retina)
  * @param {string} outputPath - output MP4 path
+ * @param {number} browserChromeH - browser toolbar height in logical px
+ * @param {object} options
+ * @param {boolean} options.captureCursor - include OS cursor in recording (manual mode)
  */
-function buildCaptureArgs(deviceIndex, width, height, scaleFactor, outputPath) {
+function buildCaptureArgs(deviceIndex, width, height, scaleFactor, outputPath, browserChromeH = 0, options = {}) {
+  const { captureCursor = false } = options
   const W = width * scaleFactor
   const H = height * scaleFactor
-  const Y = 23 * scaleFactor  // offset for macOS menu bar
+  const Y = (23 + browserChromeH) * scaleFactor  // macOS menu bar + browser toolbar
   return [
     '-f', 'avfoundation',
-    '-capture_cursor', '0',
+    '-capture_cursor', captureCursor ? '1' : '0',
     '-framerate', '60',
     '-i', deviceIndex,
     '-vf', `crop=${W}:${H}:0:${Y}`,
     '-r', '60',
-    '-vcodec', 'libx264',
-    '-crf', '18',
-    '-preset', 'slow',
+    '-vcodec', 'h264_videotoolbox',
+    '-b:v', '20000k',
+    '-realtime', '1',
     '-pix_fmt', 'yuv420p',
     outputPath
   ]

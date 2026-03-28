@@ -32,6 +32,19 @@ contextBridge.exposeInMainWorld('api', {
   onJobUpdate: (cb) => ipcRenderer.on('job:update', (_, update) => cb(update)),
   onSetupProgress: (cb) => ipcRenderer.on('setup:progress', (_, data) => cb(data)),
 
+  // Session management
+  setupSession: (url) => ipcRenderer.invoke('session:setup', { url }),
+  clearSession: (url) => ipcRenderer.invoke('session:clear', { url }),
+  hasSession: (url) => ipcRenderer.invoke('session:has', { url }),
+
   // Setup retry
-  retrySetup: () => ipcRenderer.send('setup:retry')
+  retrySetup: () => ipcRenderer.send('setup:retry'),
+
+  // Scroll settings
+  getScrollSettings: (url) => ipcRenderer.invoke('scroll:get', { url }),
+  saveScrollSettings: (url, settings) => ipcRenderer.invoke('scroll:set', { url, settings }),
+
+  // HTTP Basic Auth
+  getHttpAuth: (url) => ipcRenderer.invoke('httpauth:get', { url }),
+  saveHttpAuth: (url, credentials) => ipcRenderer.invoke('httpauth:set', { url, credentials }),
 })

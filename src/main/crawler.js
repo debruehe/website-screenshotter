@@ -1,7 +1,11 @@
 const SKIP_EXTENSIONS = ['.pdf', '.zip', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.mp4', '.webp', '.ico', '.woff', '.woff2']
 
+function stripWww(hostname) {
+  return hostname.startsWith('www.') ? hostname.slice(4) : hostname
+}
+
 function filterLinks(links, baseUrl, visited) {
-  const baseHost = new URL(baseUrl).hostname
+  const baseHost = stripWww(new URL(baseUrl).hostname)
   const visitedBases = visited.map(u => {
     try { return new URL(u).origin + new URL(u).pathname } catch { return u }
   })
@@ -11,7 +15,7 @@ function filterLinks(links, baseUrl, visited) {
     try { parsed = new URL(link) } catch { return false }
 
     if (!['http:', 'https:'].includes(parsed.protocol)) return false
-    if (parsed.hostname !== baseHost) return false
+    if (stripWww(parsed.hostname) !== baseHost) return false
     if (SKIP_EXTENSIONS.some(ext => parsed.pathname.toLowerCase().endsWith(ext))) return false
 
     const base = parsed.origin + parsed.pathname
@@ -32,7 +36,7 @@ async function discoverLinks(page, baseUrl) {
 }
 
 async function crawl(page, startUrl, maxPages = 30, onLog = () => {}) {
-  const cap = Math.min(maxPages, 30)
+  const cap = maxPages
   const queue = [startUrl]
   const visited = []
 
@@ -43,7 +47,8 @@ async function crawl(page, startUrl, maxPages = 30, onLog = () => {}) {
     onLog(`Crawling: ${url}`)
 
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
+      await page.waitForTimeout(800) // let any JS-rendered nav finish
       const found = await discoverLinks(page, startUrl)
       const newLinks = filterLinks(found, startUrl, visited.concat(queue))
       queue.push(...newLinks)

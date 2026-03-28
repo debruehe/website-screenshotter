@@ -2,6 +2,12 @@ const { app, BrowserWindow } = require('electron')
 const path = require('path')
 const ipcHandlers = require('./ipc-handlers')
 
+// Playwright throws TargetClosedError as unhandled rejections from internal event emitters
+// when the browser closes while page operations are in flight. Suppress them.
+process.on('unhandledRejection', (reason) => {
+  if (reason?.name === 'TargetClosedError') return
+})
+
 let mainWindow
 
 function createWindow() {
