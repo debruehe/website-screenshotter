@@ -77,7 +77,7 @@ async function preCaptureScroll(page) {
  * For 'single-viewport': one viewport screenshot per section stop (multi-shot covering whole page).
  */
 async function captureScreenshots(job, device, outputFolder, onLog, onFile, { signal } = {}) {
-  const { screenshotFilename, slugify, slugifyCustomName } = require('./output-manager')
+  const { screenshotFilename, slugify, slugifyCustomName, deviceSlug } = require('./output-manager')
 
   const browser = await chromium.launch({ headless: true, args: CHROMIUM_ARGS })
   try {
@@ -176,13 +176,13 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
 
         if (job.screenshotType === 'hero') {
           // Single viewport screenshot at the top of the page, no scrolling
-          const filename = screenshotFilename(nameSlug, device.id)
+          const filename = screenshotFilename(nameSlug, deviceSlug(device))
           const filePath = path.join(pageOutputFolder, filename)
           await page.screenshot({ path: filePath, fullPage: false })
           onLog(`${progressPrefix}Saved: ${filename}`)
           onFile(filePath)
         } else if (job.screenshotType === 'full-page') {
-          const filename = screenshotFilename(nameSlug, device.id)
+          const filename = screenshotFilename(nameSlug, deviceSlug(device))
           const filePath = path.join(pageOutputFolder, filename)
           await page.screenshot({ path: filePath, fullPage: true })
           onLog(`${progressPrefix}Saved: ${filename}`)
@@ -195,7 +195,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
           for (let i = 0; i < stops.length; i++) {
             await page.evaluate(y => window.scrollTo(0, y), stops[i])
             await page.waitForTimeout(300)
-            const baseName = screenshotFilename(nameSlug, device.id)
+            const baseName = screenshotFilename(nameSlug, deviceSlug(device))
             // Insert stop index before extension: index--macbook-pro--1.png
             const filename = baseName.replace(/\.png$/, `--${i + 1}.png`)
             const filePath = path.join(pageOutputFolder, filename)
@@ -218,7 +218,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
  * Cmd+Y captures a numbered screenshot. Close browser or press Escape to end.
  */
 async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile) {
-  const { screenshotFilename } = require('./output-manager')
+  const { screenshotFilename, deviceSlug } = require('./output-manager')
   const { globalShortcut } = require('electron')
 
   const browser = await chromium.launch({
@@ -272,7 +272,7 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
         try {
           const currentUrl = page.url()
           const urlPath = new URL(currentUrl).pathname
-          const baseName = screenshotFilename(urlPath, device.id)
+          const baseName = screenshotFilename(urlPath, deviceSlug(device))
           const filename = baseName.replace(/\.png$/, `--${String(shotIndex).padStart(3, '0')}.png`)
           const filePath = path.join(outputFolder, filename)
           await page.screenshot({ path: filePath, fullPage: false })

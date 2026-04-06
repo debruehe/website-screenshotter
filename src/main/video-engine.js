@@ -8,7 +8,7 @@ const { getForUrl: getHttpAuth } = require('./http-auth')
 
 const { runHoverInteractions, injectFakeCursor, injectSmoothCursor, injectClickVisualizer, findAllHoverTargets, interactHover } = require('./hover-engine')
 const { getFfmpegPath, resolveScreenDeviceIndex, buildCaptureArgs, spawnFfmpeg } = require('./ffmpeg-helper')
-const { videoFilename, slugify } = require('./output-manager')
+const { videoFilename, slugify, deviceSlug } = require('./output-manager')
 
 const DEFAULT_CSS = `
 * { scrollbar-width: none !important; }
@@ -136,7 +136,7 @@ async function startRecording(page, device, outputFolder, scaleFactor, screenInd
     if (typeof onLog === 'function') onLog(`Auto-detected browser chrome: ${browserChromeH}px — run Calibrate in Settings for precision`)
   }
 
-  const outputPath = outputPathOverride || path.join(outputFolder, videoFilename(device.id, isManual))
+  const outputPath = outputPathOverride || path.join(outputFolder, videoFilename(deviceSlug(device), isManual))
   const args = buildCaptureArgs(screenIndex, device.width, device.height, scaleFactor, outputPath, browserChromeH, {
     ...captureOptions,
     cropYOffset
@@ -211,7 +211,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         if (job.hoverInteractions) await injectFakeCursor(page)
 
         const slug = slugify(new URL(url).pathname)
-        const outputFilename = `scroll--${slug}--${device.id}.mp4`
+        const outputFilename = `scroll--${slug}--${deviceSlug(device)}.mp4`
         const outputPath = path.join(outputFolder, outputFilename)
 
         const { proc } = await startRecording(
@@ -377,7 +377,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         await stopRecording(proc, onLog)
       }
 
-      if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
+      if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(deviceSlug(device))}`)
       if (typeof onFile === 'function') onFile(outputPath)
     }
   } finally {
@@ -436,7 +436,7 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
       await stopRecording(proc, onLog)
     }
 
-    if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id, true)}`)
+    if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(deviceSlug(device), true)}`)
     if (typeof onFile === 'function') onFile(outputPath)
   } finally {
     await close()

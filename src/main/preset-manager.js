@@ -15,6 +15,8 @@ const BUILT_IN_DEVICES = [
   { id: 'iphone-16-pro', name: 'iPhone 16 Pro', width: 393, height: 852 }
 ]
 
+const BUILT_IN_IDS = new Set(BUILT_IN_DEVICES.map(d => d.id))
+
 function ensureDir() {
   fs.mkdirSync(STORE_DIR, { recursive: true })
 }
@@ -22,26 +24,27 @@ function ensureDir() {
 function load() {
   ensureDir()
   if (!fs.existsSync(PRESETS_FILE)) {
-    return { devices: [...BUILT_IN_DEVICES], jobs: [] }
+    return { devices: [...BUILT_IN_DEVICES], jobs: [], deletedBuiltins: [] }
   }
   try {
     const data = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf8'))
     const devices = data.devices || [...BUILT_IN_DEVICES]
-    // Inject any built-in devices that are missing (e.g. added in a newer version)
+    const deletedBuiltins = new Set(data.deletedBuiltins || [])
+    // Inject built-in devices added in newer versions, skipping ones the user deleted
     let changed = false
     for (const builtin of BUILT_IN_DEVICES) {
+      if (deletedBuiltins.has(builtin.id)) continue
       if (!devices.find(d => d.id === builtin.id)) {
-        // Insert at the same position as in BUILT_IN_DEVICES
         const idx = BUILT_IN_DEVICES.indexOf(builtin)
         devices.splice(idx, 0, builtin)
         changed = true
       }
     }
-    const result = { devices, jobs: data.jobs || [] }
+    const result = { devices, jobs: data.jobs || [], deletedBuiltins: [...deletedBuiltins] }
     if (changed) save(result)
     return result
   } catch {
-    return { devices: [...BUILT_IN_DEVICES], jobs: [] }
+    return { devices: [...BUILT_IN_DEVICES], jobs: [], deletedBuiltins: [] }
   }
 }
 
@@ -63,6 +66,10 @@ function saveDevice(device) {
 function deleteDevice(id) {
   const data = load()
   data.devices = data.devices.filter(d => d.id !== id)
+  // Remember deleted built-ins so migration doesn't re-add them on next launch
+  if (BUILT_IN_IDS.has(id)) {
+    data.deletedBuiltins = [...new Set([...data.deletedBuiltins, id])]
+  }
   save(data)
 }
 

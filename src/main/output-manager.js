@@ -32,6 +32,10 @@ function createSessionFolder(outputRoot, folderName) {
   return folderPath
 }
 
+function deviceSlug(device) {
+  return device.id.startsWith('custom-') ? slugifyCustomName(device.name) : device.id
+}
+
 function screenshotFilename(urlPath, deviceId) {
   return `${slugify(urlPath)}--${deviceId}.png`
 }
@@ -82,7 +86,7 @@ function exportZip(sessionFolder) {
 }
 
 module.exports = {
-  slugify, slugifyCustomName, sessionFolderName, createSessionFolder,
+  slugify, slugifyCustomName, deviceSlug, sessionFolderName, createSessionFolder,
   screenshotFilename, videoFilename, nowStamps,
   getHistory, addHistoryEntry, deleteHistoryEntry, exportZip
 }
