@@ -1,5 +1,11 @@
+const ICON_PLAY = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 1.5l7 4.5-7 4.5V1.5z" fill="currentColor"/></svg>'
+const ICON_STOP = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="currentColor"/></svg>'
+const ICON_SPINNER = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" class="spin-icon"><circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="14 14" stroke-linecap="round"/></svg>'
+
 window.capturePanel = {
   _scrollSaveTimer: null,
+  _urlSettingsTimer: null,
+  _activeJobId: null,
 
   init() {
     const panel = document.getElementById('panel-capture')
@@ -9,18 +15,20 @@ window.capturePanel = {
         <div class="pf-section pf-url-section">
           <div class="url-row">
             <input type="text" id="cap-url" placeholder="example.com" autocomplete="off" spellcheck="false" style="flex:1">
-            <button class="primary" id="cap-start">▶ Start</button>
+            <button class="btn-sm" id="cap-add-queue">+ Queue</button>
+            <button class="primary cap-start-btn" id="cap-start">${ICON_PLAY}<span>Start</span></button>
           </div>
+          <input type="text" id="cap-page-name" placeholder="Page name (optional — uses URL if empty)" autocomplete="off" spellcheck="false">
           <div class="session-bar">
             <button id="cap-session-btn" class="btn-sm"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="4.5" cy="5" r="2.5" stroke="currentColor" stroke-width="1.25"/><path d="M6.5 6.5 10 10M8 8.5l1.5 1.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>Setup Session</button>
             <span id="cap-session-status" class="txt-muted" style="font-size:11px">No saved session</span>
             <button id="cap-session-clear" class="btn-sm btn-danger" style="display:none">✕ Clear</button>
           </div>
-          <div class="session-bar" style="margin-top:7px">
+          <div class="session-bar">
             <button id="cap-auth-toggle" class="btn-sm"><svg width="11" height="13" viewBox="0 0 11 13" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="5.5" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.25"/><path d="M3 5.5V4a2.5 2.5 0 0 1 5 0v1.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>HTTP Auth</button>
             <span id="cap-auth-status" class="txt-muted" style="font-size:11px"></span>
           </div>
-          <div id="cap-auth-fields" style="display:none;margin-top:8px">
+          <div id="cap-auth-fields" style="display:none">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               <input type="text" id="cap-auth-user" placeholder="Username" autocomplete="off" spellcheck="false">
               <input type="password" id="cap-auth-pass" placeholder="Password" autocomplete="off">
@@ -44,22 +52,35 @@ window.capturePanel = {
           </div>
 
           <div id="screenshot-opts" class="mode-panel">
-            <div class="mode-grid">
-              <div>
-                <div class="sub-hdr">Capture type</div>
-                <div class="opt-stack" style="gap:6px">
-                  <label class="opt-label"><input type="radio" name="scrtype" value="full-page" checked><span>Full page</span></label>
-                  <label class="opt-label"><input type="radio" name="scrtype" value="single-viewport"><span>Viewport shots</span></label>
+            <div style="margin-bottom:12px">
+              <label class="opt-label"><input type="checkbox" id="cap-scr-manual"><span>Manual mode</span></label>
+              <div id="cap-scr-manual-hint" class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:21px;display:none">Browser opens for free navigation. Press <strong style="color:var(--text)">Cmd+P</strong> to capture, <strong style="color:var(--text)">Escape</strong> to finish.</div>
+            </div>
+            <div id="screenshot-auto-opts">
+              <div class="mode-grid">
+                <div>
+                  <div class="sub-hdr">Capture type</div>
+                  <div class="opt-stack" style="gap:6px">
+                    <label class="opt-label"><input type="radio" name="scrtype" value="full-page" checked><span>Full page</span></label>
+                    <label class="opt-label"><input type="radio" name="scrtype" value="single-viewport"><span>Viewport shots</span></label>
+                    <label class="opt-label"><input type="radio" name="scrtype" value="hero"><span>Hero shot</span></label>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div class="sub-hdr">Crawl</div>
-                <div class="opt-stack" style="gap:8px">
-                  <label class="opt-label"><input type="checkbox" id="cap-crawl"><span>Crawl site</span></label>
-                  <div class="row-flex" style="gap:6px;align-items:center">
-                    <span class="txt-muted" style="font-size:12px">Max</span>
-                    <input type="number" id="cap-crawl-max" value="30" min="1" max="100" class="num-input">
-                    <span class="txt-muted">pages</span>
+                <div>
+                  <div class="sub-hdr">Crawl</div>
+                  <div class="opt-stack" style="gap:8px">
+                    <div id="cap-crawl-opts">
+                      <label class="opt-label"><input type="checkbox" id="cap-crawl"><span>Crawl site</span></label>
+                      <div class="row-flex" style="gap:6px;align-items:center">
+                        <span class="txt-muted" style="font-size:12px">Max</span>
+                        <div class="unit-input">
+                          <input type="number" id="cap-crawl-max" value="30" min="1" max="100">
+                          <span class="unit-label">pages</span>
+                        </div>
+                      </div>
+                    </div>
+                    <label class="opt-label"><input type="checkbox" id="cap-bulk"><span>Bulk URLs</span></label>
+                    <textarea id="cap-bulk-urls" rows="6" placeholder="One URL per line&#10;https://example.com/about&#10;https://example.com/work" style="display:none;margin-top:4px;font-size:11px;font-family:monospace" spellcheck="false"></textarea>
                   </div>
                 </div>
               </div>
@@ -70,6 +91,9 @@ window.capturePanel = {
             <div style="margin-bottom:12px">
               <label class="opt-label"><input type="checkbox" id="cap-manual"><span>Manual recording</span></label>
               <div id="cap-manual-hint" class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:19px;display:none">Browser opens and recording starts. Do whatever you want, then press <strong style="color:var(--text)">Esc</strong> to stop and save.</div>
+              <div id="cap-smooth-cursor-row" style="display:none;margin-top:8px;padding-left:19px">
+                <label class="opt-label"><input type="checkbox" id="cap-smooth-cursor"><span>Smooth cursor</span></label>
+              </div>
             </div>
             <div id="video-auto-opts">
               <div class="mode-grid">
@@ -77,12 +101,16 @@ window.capturePanel = {
                   <div class="sub-hdr">Scroll speed</div>
                   <div class="opt-stack" style="gap:8px">
                     <div class="row-flex" style="gap:6px;align-items:center">
-                      <input type="number" id="cap-speed" value="2000" min="200" max="9999" class="num-input" style="width:72px">
-                      <span class="txt-muted">ms / 1000px</span>
+                      <div class="unit-input">
+                        <input type="number" id="cap-speed" value="2000" min="200" max="9999">
+                        <span class="unit-label">ms scroll</span>
+                      </div>
                     </div>
                     <div class="row-flex" style="gap:6px;align-items:center">
-                      <input type="number" id="cap-pause" value="1500" min="0" max="9999" class="num-input" style="width:72px">
-                      <span class="txt-muted">ms pause</span>
+                      <div class="unit-input">
+                        <input type="number" id="cap-pause" value="1500" min="0" max="9999">
+                        <span class="unit-label">ms pause</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -92,8 +120,10 @@ window.capturePanel = {
                     <label class="opt-label"><input type="checkbox" id="cap-hover"><span>Hover interactions</span></label>
                     <div class="row-flex" style="gap:6px;align-items:center">
                       <span class="txt-muted" style="font-size:12px">Extend viewport</span>
-                      <input type="number" id="cap-extend" value="0" min="0" max="400" class="num-input">
-                      <span class="txt-muted">px</span>
+                      <div class="unit-input">
+                        <input type="number" id="cap-extend" value="0" min="0" max="400">
+                        <span class="unit-label">px</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -107,8 +137,10 @@ window.capturePanel = {
           <div class="opt-stack" style="gap:9px">
             <div class="row-flex" style="gap:10px;align-items:center">
               <label class="opt-label" style="min-width:96px"><input type="radio" name="scroll-mode" value="step" checked><span>Even steps</span></label>
-              <input type="number" id="scroll-step" value="1000" min="100" max="9999" class="num-input">
-              <span class="txt-muted">px per step</span>
+              <div class="unit-input">
+                <input type="number" id="scroll-step" value="1000" min="100" max="9999">
+                <span class="unit-label">px / step</span>
+              </div>
             </div>
             <div class="row-flex" style="gap:10px;align-items:center">
               <label class="opt-label" style="min-width:96px"><input type="radio" name="scroll-mode" value="custom"><span>Custom</span></label>
@@ -128,9 +160,9 @@ window.capturePanel = {
           <div class="row-flex" style="gap:32px">
             <div>
               <div class="pf-hdr">Hero Wait</div>
-              <div class="row-flex" style="gap:6px;align-items:center">
-                <input type="number" id="cap-wait" value="15" min="0" max="120" class="num-input">
-                <span class="txt-muted">seconds</span>
+              <div class="unit-input">
+                <input type="number" id="cap-wait" value="15" min="0" max="120">
+                <span class="unit-label">seconds</span>
               </div>
             </div>
             <div>
@@ -155,7 +187,7 @@ window.capturePanel = {
     sel.innerHTML = devices.map(d => `<option value="${d.id}">${d.name}</option>`).join('')
     const batchList = document.getElementById('cap-batch-list')
     batchList.innerHTML = devices.map(d => `
-      <label class="opt-label" style="margin-bottom:6px">
+      <label class="opt-label">
         <input type="checkbox" class="batch-device" value="${d.id}">
         <span>${d.name}</span>
       </label>
@@ -171,6 +203,7 @@ window.capturePanel = {
         const isVideo = btn.dataset.mode === 'video'
         document.getElementById('screenshot-opts').style.display = isVideo ? 'none' : 'block'
         document.getElementById('video-opts').style.display = isVideo ? 'block' : 'none'
+        this._scheduleUrlSettingsSave()
       })
     })
 
@@ -213,7 +246,7 @@ window.capturePanel = {
     document.getElementById('cap-auth-user').addEventListener('input', scheduleAuthSave)
     document.getElementById('cap-auth-pass').addEventListener('input', scheduleAuthSave)
 
-    // URL blur: auto-prefix https://, load scroll settings + session + auth
+    // URL blur: auto-prefix https://, load all per-URL settings
     document.getElementById('cap-url').addEventListener('blur', () => {
       const input = document.getElementById('cap-url')
       let v = input.value.trim()
@@ -224,6 +257,7 @@ window.capturePanel = {
       this.refreshSessionStatus()
       this.loadScrollSettings(v)
       this.loadHttpAuth(v)
+      this.loadUrlSettings(v)
     })
 
     document.getElementById('cap-url').addEventListener('input', () => {
@@ -250,11 +284,44 @@ window.capturePanel = {
       this.refreshSessionStatus()
     })
 
-    // Manual mode toggle
+    // Manual mode toggle (video)
     document.getElementById('cap-manual').addEventListener('change', e => {
       const isManual = e.target.checked
       document.getElementById('video-auto-opts').style.display = isManual ? 'none' : 'block'
       document.getElementById('cap-manual-hint').style.display = isManual ? 'block' : 'none'
+      document.getElementById('cap-smooth-cursor-row').style.display = isManual ? 'block' : 'none'
+    })
+
+    // Manual mode toggle (screenshot)
+    document.getElementById('cap-scr-manual').addEventListener('change', e => {
+      const isManual = e.target.checked
+      document.getElementById('screenshot-auto-opts').style.display = isManual ? 'none' : 'block'
+      document.getElementById('cap-scr-manual-hint').style.display = isManual ? 'block' : 'none'
+    })
+
+    // Save all URL settings on any relevant field change
+    const saveFields = [
+      'cap-page-name', 'cap-crawl', 'cap-crawl-max', 'cap-wait',
+      'cap-css', 'cap-extend', 'cap-speed', 'cap-pause', 'cap-hover', 'cap-scr-manual', 'cap-smooth-cursor'
+    ]
+    saveFields.forEach(id => {
+      const el = document.getElementById(id)
+      if (el) el.addEventListener('change', () => this._scheduleUrlSettingsSave())
+    })
+    saveFields.forEach(id => {
+      const el = document.getElementById(id)
+      if (el && (el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'radio') || el?.tagName === 'TEXTAREA')
+        el.addEventListener('input', () => this._scheduleUrlSettingsSave())
+    })
+    document.querySelectorAll('input[name="scrtype"], input[name="dark"]').forEach(r =>
+      r.addEventListener('change', () => this._scheduleUrlSettingsSave())
+    )
+
+    // Add to queue
+    document.getElementById('cap-add-queue').addEventListener('click', () => {
+      const job = this.buildJob()
+      if (!job.url) return alert('Please enter a URL')
+      if (window.queuePanel) window.queuePanel.addJob(job)
     })
 
     // Start
@@ -336,6 +403,7 @@ window.capturePanel = {
 
     return {
       url,
+      pageName: document.getElementById('cap-page-name').value.trim(),
       device: document.getElementById('cap-device').value,
       batchDevices: isBatch
         ? Array.from(document.querySelectorAll('.batch-device:checked')).map(el => el.value)
@@ -346,8 +414,11 @@ window.capturePanel = {
       crawlMaxPages: parseInt(document.getElementById('cap-crawl-max').value) || 30,
       scrollSpeed: parseInt(document.getElementById('cap-speed')?.value) || 2000,
       scrollPause: parseInt(document.getElementById('cap-pause')?.value) ?? 1500,
-      manualMode: document.getElementById('cap-manual')?.checked ?? false,
+      manualMode: (mode === 'screenshot'
+        ? document.getElementById('cap-scr-manual')?.checked
+        : document.getElementById('cap-manual')?.checked) ?? false,
       hoverInteractions: document.getElementById('cap-hover')?.checked ?? false,
+      smoothCursor: document.getElementById('cap-manual')?.checked && (document.getElementById('cap-smooth-cursor')?.checked ?? false),
       viewportExtend: parseInt(document.getElementById('cap-extend').value) || 0,
       heroWaitSeconds: parseInt(document.getElementById('cap-wait').value) || 15,
       darkMode: document.querySelector('input[name="dark"]:checked')?.value === 'on',
@@ -390,19 +461,101 @@ window.capturePanel = {
     }
   },
 
+  _scheduleUrlSettingsSave() {
+    clearTimeout(this._urlSettingsTimer)
+    this._urlSettingsTimer = setTimeout(() => this._saveUrlSettings(), 600)
+  },
+
+  async _saveUrlSettings() {
+    const url = this._normalizeUrl(document.getElementById('cap-url').value)
+    if (!url) return
+    const mode = document.querySelector('.mode-btn.active')?.dataset.mode
+    await window.api.saveUrlSettings(url, {
+      pageName:          document.getElementById('cap-page-name').value.trim(),
+      mode,
+      screenshotType:    document.querySelector('input[name="scrtype"]:checked')?.value,
+      crawl:             document.getElementById('cap-crawl').checked,
+      crawlMaxPages:     parseInt(document.getElementById('cap-crawl-max').value) || 30,
+      heroWaitSeconds:   parseInt(document.getElementById('cap-wait').value) || 15,
+      darkMode:          document.querySelector('input[name="dark"]:checked')?.value === 'on',
+      customCss:         document.getElementById('cap-css').value,
+      viewportExtend:    parseInt(document.getElementById('cap-extend').value) || 0,
+      scrollSpeed:       parseInt(document.getElementById('cap-speed')?.value) || 2000,
+      scrollPause:       parseInt(document.getElementById('cap-pause')?.value) ?? 1500,
+      hoverInteractions: document.getElementById('cap-hover')?.checked ?? false,
+      smoothCursor:      document.getElementById('cap-smooth-cursor')?.checked ?? false,
+    })
+  },
+
+  async loadUrlSettings(url) {
+    if (!url) return
+    try {
+      const s = await window.api.getUrlSettings(url)
+      if (!s) return
+      if (s.pageName !== undefined)
+        document.getElementById('cap-page-name').value = s.pageName
+      if (s.mode) {
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === s.mode))
+        document.getElementById('screenshot-opts').style.display = s.mode === 'video' ? 'none' : 'block'
+        document.getElementById('video-opts').style.display = s.mode === 'video' ? 'block' : 'none'
+      }
+      if (s.screenshotType) {
+        const r = document.querySelector(`input[name="scrtype"][value="${s.screenshotType}"]`)
+        if (r) r.checked = true
+      }
+      if (s.crawl !== undefined) document.getElementById('cap-crawl').checked = s.crawl
+      if (s.crawlMaxPages !== undefined) document.getElementById('cap-crawl-max').value = s.crawlMaxPages
+      if (s.heroWaitSeconds !== undefined) document.getElementById('cap-wait').value = s.heroWaitSeconds
+      if (s.darkMode !== undefined) {
+        const r = document.querySelector(`input[name="dark"][value="${s.darkMode ? 'on' : 'off'}"]`)
+        if (r) r.checked = true
+      }
+      if (s.customCss !== undefined) document.getElementById('cap-css').value = s.customCss
+      if (s.viewportExtend !== undefined) document.getElementById('cap-extend').value = s.viewportExtend
+      if (s.scrollSpeed !== undefined && document.getElementById('cap-speed'))
+        document.getElementById('cap-speed').value = s.scrollSpeed
+      if (s.scrollPause !== undefined && document.getElementById('cap-pause'))
+        document.getElementById('cap-pause').value = s.scrollPause
+      if (s.hoverInteractions !== undefined && document.getElementById('cap-hover'))
+        document.getElementById('cap-hover').checked = s.hoverInteractions
+      if (s.smoothCursor !== undefined && document.getElementById('cap-smooth-cursor')) {
+        document.getElementById('cap-smooth-cursor').checked = s.smoothCursor
+        if (document.getElementById('cap-manual')?.checked)
+          document.getElementById('cap-smooth-cursor-row').style.display = s.smoothCursor !== undefined ? 'block' : 'none'
+      }
+      // Sync batch/crawl visibility
+      document.getElementById('cap-batch-list').style.display =
+        document.getElementById('cap-batch').checked ? 'block' : 'none'
+    } catch (_) {}
+  },
+
   async startCapture() {
+    const btn = document.getElementById('cap-start')
+
+    // If already capturing, cancel
+    if (this._activeJobId) {
+      await window.api.cancelJob(this._activeJobId)
+      this._activeJobId = null
+      btn.innerHTML = `${ICON_PLAY}<span>Start</span>`
+      btn.classList.remove('capturing')
+      return
+    }
+
     const job = this.buildJob()
     if (!job.url) return alert('Please enter a URL')
-    // Save current scroll settings before starting
     await this._saveScrollSettings()
-    const btn = document.getElementById('cap-start')
-    btn.disabled = true
-    btn.textContent = '⏳ Capturing…'
+
+    btn.innerHTML = `${ICON_SPINNER}<span>Capturing…</span>`
+    btn.classList.add('capturing')
+    this._activeJobId = 'pending'
+
     try {
-      await window.api.startCapture(job)
+      const result = await window.api.startCapture(job)
+      if (result?.jobId) this._activeJobId = result.jobId
     } finally {
-      btn.disabled = false
-      btn.textContent = '▶ Start'
+      this._activeJobId = null
+      btn.innerHTML = `${ICON_PLAY}<span>Start</span>`
+      btn.classList.remove('capturing')
     }
   }
 }
