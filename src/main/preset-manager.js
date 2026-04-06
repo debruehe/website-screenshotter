@@ -26,10 +26,20 @@ function load() {
   }
   try {
     const data = JSON.parse(fs.readFileSync(PRESETS_FILE, 'utf8'))
-    return {
-      devices: data.devices || [...BUILT_IN_DEVICES],
-      jobs: data.jobs || []
+    const devices = data.devices || [...BUILT_IN_DEVICES]
+    // Inject any built-in devices that are missing (e.g. added in a newer version)
+    let changed = false
+    for (const builtin of BUILT_IN_DEVICES) {
+      if (!devices.find(d => d.id === builtin.id)) {
+        // Insert at the same position as in BUILT_IN_DEVICES
+        const idx = BUILT_IN_DEVICES.indexOf(builtin)
+        devices.splice(idx, 0, builtin)
+        changed = true
+      }
     }
+    const result = { devices, jobs: data.jobs || [] }
+    if (changed) save(result)
+    return result
   } catch {
     return { devices: [...BUILT_IN_DEVICES], jobs: [] }
   }
