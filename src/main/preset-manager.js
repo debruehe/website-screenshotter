@@ -8,6 +8,7 @@ const PRESETS_FILE = path.join(STORE_DIR, 'presets.json')
 
 const BUILT_IN_DEVICES = [
   { id: 'full-hd', name: 'Full HD Desktop', width: 1920, height: 1080 },
+  { id: 'macbook-air', name: 'MacBook Air', width: 1674, height: 1083 },
   { id: 'macbook-pro', name: 'MacBook Pro', width: 1440, height: 900 },
   { id: 'ipad-portrait', name: 'iPad Portrait', width: 768, height: 1024 },
   { id: 'ipad-landscape', name: 'iPad Landscape', width: 1024, height: 768 },
