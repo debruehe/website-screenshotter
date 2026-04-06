@@ -7,6 +7,9 @@
     "identity": null,
     "icon": "assets/icon.icns"
   },
+  "asarUnpack": [
+    "node_modules/@ffmpeg-installer/**/*"
+  ],
   "files": [
     "src/**/*",
     "node_modules/**/*",

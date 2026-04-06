@@ -2,7 +2,14 @@ const { spawn, spawnSync } = require('child_process')
 const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
 
 function getFfmpegPath(override) {
-  return override || ffmpegInstaller.path
+  if (override) return override
+  let p = ffmpegInstaller.path
+  // In a packaged Electron app, binaries can't be executed from inside an .asar archive.
+  // electron-builder extracts asarUnpack files to app.asar.unpacked — fix the path.
+  if (p.includes('app.asar') && !p.includes('app.asar.unpacked')) {
+    p = p.replace('app.asar', 'app.asar.unpacked')
+  }
+  return p
 }
 
 /**

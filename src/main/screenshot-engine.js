@@ -215,7 +215,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
 
 /**
  * Manual screenshot mode: opens a headed browser, user navigates freely.
- * Cmd+P captures a numbered screenshot. Close browser or press Escape to end.
+ * Cmd+Y captures a numbered screenshot. Close browser or press Escape to end.
  */
 async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile) {
   const { screenshotFilename } = require('./output-manager')
@@ -262,7 +262,7 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
     await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
     await page.bringToFront()
 
-    onLog('Manual mode active — press Cmd+P to capture, Escape to finish.')
+    onLog('Manual mode active — press Cmd+Y to capture, Escape to finish.')
 
     let shotIndex = 0
 
@@ -283,15 +283,15 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
         }
       }
 
-      globalShortcut.register('CommandOrControl+P', takeShot)
+      globalShortcut.register('CommandOrControl+Y', takeShot)
       globalShortcut.register('Escape', () => {
-        globalShortcut.unregister('CommandOrControl+P')
+        globalShortcut.unregister('CommandOrControl+Y')
         globalShortcut.unregister('Escape')
         resolve()
       })
 
       browser.on('disconnected', () => {
-        try { globalShortcut.unregister('CommandOrControl+P') } catch (_) {}
+        try { globalShortcut.unregister('CommandOrControl+Y') } catch (_) {}
         try { globalShortcut.unregister('Escape') } catch (_) {}
         resolve()
       })
@@ -299,7 +299,7 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
 
     onLog(`Manual session ended — ${shotIndex} screenshot(s) saved`)
   } finally {
-    try { globalShortcut.unregister('CommandOrControl+P') } catch (_) {}
+    try { globalShortcut.unregister('CommandOrControl+Y') } catch (_) {}
     try { globalShortcut.unregister('Escape') } catch (_) {}
     try { await browser.close() } catch (_) {}
   }
