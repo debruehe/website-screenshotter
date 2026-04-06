@@ -34,6 +34,10 @@ window.capturePanel = {
               <input type="password" id="cap-auth-pass" placeholder="Password" autocomplete="off">
             </div>
           </div>
+          <div class="session-bar" style="margin-top:6px">
+            <label class="opt-label"><input type="checkbox" id="cap-bulk"><span>Bulk URLs</span></label>
+          </div>
+          <textarea id="cap-bulk-urls" rows="6" placeholder="One URL per line&#10;https://example.com/about&#10;https://example.com/work" style="display:none;margin-top:4px;font-size:11px;font-family:monospace" spellcheck="false"></textarea>
         </div>
 
         <div class="pf-section">
@@ -68,19 +72,15 @@ window.capturePanel = {
                 </div>
                 <div>
                   <div class="sub-hdr">Crawl</div>
-                  <div class="opt-stack" style="gap:8px">
-                    <div id="cap-crawl-opts">
-                      <label class="opt-label"><input type="checkbox" id="cap-crawl"><span>Crawl site</span></label>
-                      <div class="row-flex" style="gap:6px;align-items:center">
-                        <span class="txt-muted" style="font-size:12px">Max</span>
-                        <div class="unit-input">
-                          <input type="number" id="cap-crawl-max" value="30" min="1" max="100">
-                          <span class="unit-label">pages</span>
-                        </div>
+                  <div id="cap-crawl-opts" class="opt-stack" style="gap:8px">
+                    <label class="opt-label"><input type="checkbox" id="cap-crawl"><span>Crawl site</span></label>
+                    <div class="row-flex" style="gap:6px;align-items:center">
+                      <span class="txt-muted" style="font-size:12px">Max</span>
+                      <div class="unit-input">
+                        <input type="number" id="cap-crawl-max" value="30" min="1" max="100">
+                        <span class="unit-label">pages</span>
                       </div>
                     </div>
-                    <label class="opt-label"><input type="checkbox" id="cap-bulk"><span>Bulk URLs</span></label>
-                    <textarea id="cap-bulk-urls" rows="6" placeholder="One URL per line&#10;https://example.com/about&#10;https://example.com/work" style="display:none;margin-top:4px;font-size:11px;font-family:monospace" spellcheck="false"></textarea>
                   </div>
                 </div>
               </div>
