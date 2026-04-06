@@ -5,7 +5,8 @@ window.logComponent = {
     const div = document.createElement('div')
     div.textContent = line
     logEl.appendChild(div)
-    requestAnimationFrame(() => { logEl.scrollTop = logEl.scrollHeight })
+    const area = document.getElementById('log-area')
+    if (area) requestAnimationFrame(() => { area.scrollTop = area.scrollHeight })
     // Keep max 500 lines
     while (logEl.children.length > 500) logEl.removeChild(logEl.firstChild)
   },
