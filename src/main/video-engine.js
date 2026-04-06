@@ -6,7 +6,7 @@ const { computeScrollStops } = require('./scroll-settings')
 const { getStorageState } = require('./session-manager')
 const { getForUrl: getHttpAuth } = require('./http-auth')
 
-const { runHoverInteractions, injectFakeCursor, injectSmoothCursor, findAllHoverTargets, interactHover } = require('./hover-engine')
+const { runHoverInteractions, injectFakeCursor, injectSmoothCursor, injectTouchCursor, findAllHoverTargets, interactHover } = require('./hover-engine')
 const { getFfmpegPath, resolveScreenDeviceIndex, buildCaptureArgs, spawnFfmpeg } = require('./ffmpeg-helper')
 const { videoFilename, slugify } = require('./output-manager')
 
@@ -397,11 +397,15 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
     if (job.smoothCursor) {
       await injectSmoothCursor(page)
       if (typeof onLog === 'function') onLog('Smooth cursor active.')
+    } else if (device.width < 1025) {
+      // Mobile/tablet: inject touch circle cursor to visualise finger position
+      await injectTouchCursor(page)
+      if (typeof onLog === 'function') onLog('Mobile touch cursor active.')
     }
 
     const { proc, outputPath } = await startRecording(
       page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
-      { captureCursor: !job.smoothCursor },
+      { captureCursor: !job.smoothCursor && device.width >= 1025 },
       true /* isManual */
     )
 

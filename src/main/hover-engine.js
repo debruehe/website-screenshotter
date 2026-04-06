@@ -439,4 +439,46 @@ async function injectSmoothCursor(page) {
   })
 }
 
-module.exports = { runHoverInteractions, injectFakeCursor, injectSmoothCursor, findAllHoverTargets, interactHover }
+/**
+ * Injects a touch-style circle cursor for mobile manual recordings.
+ * Hides the OS cursor and shows a blue circle that follows the mouse,
+ * darkening on press. Re-injects on page navigation.
+ */
+async function injectTouchCursor(page) {
+  const script = () => {
+    if (document.getElementById('__ws_touch_cursor')) return
+
+    const style = document.createElement('style')
+    style.textContent = '*, *::before, *::after { cursor: none !important; }'
+    document.head.appendChild(style)
+
+    const el = document.createElement('div')
+    el.id = '__ws_touch_cursor'
+    el.style.cssText = [
+      'position:fixed', 'top:0', 'left:0', 'width:44px', 'height:44px',
+      'margin:-22px 0 0 -22px', 'border-radius:50%',
+      'background:rgba(0,120,255,0.22)', 'border:2.5px solid rgba(0,120,255,0.75)',
+      'pointer-events:none', 'z-index:2147483647', 'display:none',
+      'will-change:transform'
+    ].join(';')
+    document.documentElement.appendChild(el)
+
+    document.addEventListener('mousemove', e => {
+      el.style.display = 'block'
+      el.style.transform = `translate(${e.clientX}px,${e.clientY}px)`
+    }, { passive: true })
+    document.addEventListener('mousedown', () => {
+      el.style.background = 'rgba(0,120,255,0.45)'
+    })
+    document.addEventListener('mouseup', () => {
+      el.style.background = 'rgba(0,120,255,0.22)'
+    })
+  }
+
+  await page.evaluate(script)
+  page.on('load', async () => {
+    try { await page.evaluate(script) } catch (_) {}
+  })
+}
+
+module.exports = { runHoverInteractions, injectFakeCursor, injectSmoothCursor, injectTouchCursor, findAllHoverTargets, interactHover }
