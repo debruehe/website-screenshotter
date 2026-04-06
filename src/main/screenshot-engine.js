@@ -283,15 +283,15 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
         }
       }
 
-      globalShortcut.register('CommandOrControl+Y', takeShot)
+      globalShortcut.register('CommandOrControl+Z', takeShot)
       globalShortcut.register('Escape', () => {
-        globalShortcut.unregister('CommandOrControl+Y')
+        globalShortcut.unregister('CommandOrControl+Z')
         globalShortcut.unregister('Escape')
         resolve()
       })
 
       browser.on('disconnected', () => {
-        try { globalShortcut.unregister('CommandOrControl+Y') } catch (_) {}
+        try { globalShortcut.unregister('CommandOrControl+Z') } catch (_) {}
         try { globalShortcut.unregister('Escape') } catch (_) {}
         resolve()
       })
@@ -299,7 +299,7 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
 
     onLog(`Manual session ended — ${shotIndex} screenshot(s) saved`)
   } finally {
-    try { globalShortcut.unregister('CommandOrControl+Y') } catch (_) {}
+    try { globalShortcut.unregister('CommandOrControl+Z') } catch (_) {}
     try { globalShortcut.unregister('Escape') } catch (_) {}
     try { await browser.close() } catch (_) {}
   }

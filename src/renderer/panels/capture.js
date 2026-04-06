@@ -58,7 +58,7 @@ window.capturePanel = {
           <div id="screenshot-opts" class="mode-panel">
             <div style="margin-bottom:12px">
               <label class="opt-label"><input type="checkbox" id="cap-scr-manual"><span>Manual mode</span></label>
-              <div id="cap-scr-manual-hint" class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:21px;display:none">Browser opens for free navigation. Press <strong style="color:var(--text)">Cmd+P</strong> to capture, <strong style="color:var(--text)">Escape</strong> to finish.</div>
+              <div id="cap-scr-manual-hint" class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:21px;display:none">Browser opens for free navigation. Press <strong style="color:var(--text)">Cmd+Y</strong> to capture, <strong style="color:var(--text)">Escape</strong> to finish.</div>
             </div>
             <div id="screenshot-auto-opts">
               <div class="mode-grid">
