@@ -8,7 +8,7 @@ const { getForUrl: getHttpAuth } = require('./http-auth')
 
 const { runHoverInteractions, injectFakeCursor, injectSmoothCursor, findAllHoverTargets, interactHover } = require('./hover-engine')
 const { getFfmpegPath, resolveScreenDeviceIndex, buildCaptureArgs, spawnFfmpeg } = require('./ffmpeg-helper')
-const { videoFilename } = require('./output-manager')
+const { videoFilename, slugify } = require('./output-manager')
 
 const DEFAULT_CSS = `
 * { scrollbar-width: none !important; }
@@ -108,7 +108,7 @@ async function setupBrowser(job, device, onLog) {
  * Starts FFmpeg and returns { proc, outputPath }.
  * @param {object} captureOptions - passed to buildCaptureArgs (captureCursor, realtime)
  */
-async function startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog, captureOptions = {}, isManual = false) {
+async function startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog, captureOptions = {}, isManual = false, outputPathOverride = null) {
   const store = require('./store')
   const { cropYOffset } = store.getSettings()
 
@@ -120,7 +120,7 @@ async function startRecording(page, device, outputFolder, scaleFactor, screenInd
     if (typeof onLog === 'function') onLog(`Auto-detected browser chrome: ${browserChromeH}px — run Calibrate in Settings for precision`)
   }
 
-  const outputPath = path.join(outputFolder, videoFilename(device.id, isManual))
+  const outputPath = outputPathOverride || path.join(outputFolder, videoFilename(device.id, isManual))
   const args = buildCaptureArgs(screenIndex, device.width, device.height, scaleFactor, outputPath, browserChromeH, {
     ...captureOptions,
     cropYOffset
@@ -175,88 +175,191 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
   const { page, close } = await setupBrowser(job, device, onLog)
 
   try {
-    if (job.hoverInteractions) await injectFakeCursor(page)
+    const isBulk = job.bulkUrls && job.bulkUrls.length > 0
+    const urlsToRecord = isBulk ? job.bulkUrls : null
 
-    const { proc, outputPath } = await startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog)
+    if (isBulk) {
+      // Bulk mode: one recording per URL, browser stays open between URLs
+      for (let urlIdx = 0; urlIdx < urlsToRecord.length; urlIdx++) {
+        const url = urlsToRecord[urlIdx]
+        const prefix = `[${urlIdx + 1}/${urlsToRecord.length}] `
 
-    let escapePressed = false
-    const escapeHandler = () => {
-      escapePressed = true
-      try { globalShortcut.unregister('Escape') } catch (_) {}
-      if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
-    }
-    try { globalShortcut.register('Escape', escapeHandler) } catch (_) {}
+        onLog(`${prefix}Navigating to ${url}...`)
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
+        await page.waitForTimeout(2000)
+        await page.reload({ waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
+        await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
 
-    try {
-      await page.waitForTimeout(500)
+        if (job.hoverInteractions) await injectFakeCursor(page)
 
-      if (typeof onLog === 'function') onLog(`Waiting ${job.heroWaitSeconds ?? 15}s for hero content... (press Escape to stop early)`)
-      const heroMs = (job.heroWaitSeconds ?? 15) * 1000
-      for (let waited = 0; waited < heroMs && !escapePressed; waited += 200) {
-        await page.waitForTimeout(Math.min(200, heroMs - waited))
+        const slug = slugify(new URL(url).pathname)
+        const outputFilename = `scroll--${slug}--${device.id}.mp4`
+        const outputPath = path.join(outputFolder, outputFilename)
+
+        const { proc } = await startRecording(
+          page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
+          {}, false, outputPath
+        )
+
+        let escapePressed = false
+        const escapeHandler = () => {
+          escapePressed = true
+          try { globalShortcut.unregister('Escape') } catch (_) {}
+          if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
+        }
+        try { globalShortcut.register('Escape', escapeHandler) } catch (_) {}
+
+        try {
+          await page.waitForTimeout(500)
+
+          onLog(`${prefix}Waiting ${job.heroWaitSeconds ?? 15}s for hero content...`)
+          const heroMs = (job.heroWaitSeconds ?? 15) * 1000
+          for (let waited = 0; waited < heroMs && !escapePressed; waited += 200) {
+            await page.waitForTimeout(Math.min(200, heroMs - waited))
+          }
+
+          const speedMs = job.scrollSpeed || 2000
+          let currentY = 0
+
+          if (job.hoverInteractions) {
+            const allTargets = await findAllHoverTargets(page, onLog)
+            for (const target of allTargets) {
+              if (escapePressed) break
+              const scrollHeight = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
+              const maxScroll = Math.max(0, scrollHeight - device.height)
+              const idealScroll = target.pageY + target.height / 2 - device.height / 2
+              const targetScrollY = Math.min(Math.max(0, idealScroll), maxScroll)
+              if (Math.abs(targetScrollY - currentY) > 10) {
+                onLog(`Scrolling to ${Math.round(targetScrollY)}px`)
+                await smoothScrollTo(page, targetScrollY, speedMs)
+                currentY = targetScrollY
+                await page.waitForTimeout(400)
+              }
+              if (escapePressed) break
+              const viewportBox = {
+                x: target.pageX, y: target.pageY - currentY,
+                width: target.width, height: target.height
+              }
+              await interactHover(page, viewportBox, device.width, device.height, onLog, {
+                checkDropdown: target.mayHaveDropdown,
+                isCancelled: () => escapePressed
+              })
+            }
+          } else {
+            const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
+            onLog(`${prefix}Page height: ${pageH}px`)
+            const stops = await computeScrollStops(page, device.height, url)
+            onLog(`${prefix}Scroll stops (${stops.length}): ${stops.join(', ')}`)
+            for (const targetY of stops) {
+              if (escapePressed) break
+              if (targetY === currentY) continue
+              onLog(`Scrolling to ${targetY}px`)
+              await smoothScrollTo(page, targetY, speedMs)
+              currentY = targetY
+              const pauseMs = job.scrollPause ?? 1500
+              for (let paused = 0; paused < pauseMs && !escapePressed; paused += 200) {
+                await page.waitForTimeout(Math.min(200, pauseMs - paused))
+              }
+            }
+          }
+
+          if (!escapePressed) await page.waitForTimeout(1000)
+        } finally {
+          try { globalShortcut.unregister('Escape') } catch (_) {}
+          await stopRecording(proc, onLog)
+        }
+
+        onLog(`${prefix}Video saved: ${outputFilename}`)
+        if (typeof onFile === 'function') onFile(outputPath)
+
+        if (escapePressed) {
+          onLog('Bulk recording stopped early by user.')
+          break
+        }
+      }
+    } else {
+      // Single URL mode — existing behavior, unchanged
+      if (job.hoverInteractions) await injectFakeCursor(page)
+
+      const { proc, outputPath } = await startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog)
+
+      let escapePressed = false
+      const escapeHandler = () => {
+        escapePressed = true
+        try { globalShortcut.unregister('Escape') } catch (_) {}
+        if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
+      }
+      try { globalShortcut.register('Escape', escapeHandler) } catch (_) {}
+
+      try {
+        await page.waitForTimeout(500)
+
+        if (typeof onLog === 'function') onLog(`Waiting ${job.heroWaitSeconds ?? 15}s for hero content... (press Escape to stop early)`)
+        const heroMs = (job.heroWaitSeconds ?? 15) * 1000
+        for (let waited = 0; waited < heroMs && !escapePressed; waited += 200) {
+          await page.waitForTimeout(Math.min(200, heroMs - waited))
+        }
+
+        const speedMs = job.scrollSpeed || 2000
+        let currentY = 0
+
+        if (job.hoverInteractions) {
+          const allTargets = await findAllHoverTargets(page, onLog)
+
+          for (const target of allTargets) {
+            if (escapePressed) break
+            const scrollHeight = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
+            const maxScroll = Math.max(0, scrollHeight - device.height)
+            const idealScroll = target.pageY + target.height / 2 - device.height / 2
+            const targetScrollY = Math.min(Math.max(0, idealScroll), maxScroll)
+
+            if (Math.abs(targetScrollY - currentY) > 10) {
+              if (typeof onLog === 'function') onLog(`Scrolling to ${Math.round(targetScrollY)}px`)
+              await smoothScrollTo(page, targetScrollY, speedMs)
+              currentY = targetScrollY
+              await page.waitForTimeout(400)
+            }
+
+            if (escapePressed) break
+            const viewportBox = {
+              x: target.pageX,
+              y: target.pageY - currentY,
+              width: target.width,
+              height: target.height
+            }
+            await interactHover(page, viewportBox, device.width, device.height, onLog, {
+              checkDropdown: target.mayHaveDropdown,
+              isCancelled: () => escapePressed
+            })
+          }
+        } else {
+          const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
+          if (typeof onLog === 'function') onLog(`Page height: ${pageH}px, viewport: ${device.height}px, maxScroll: ${pageH - device.height}px`)
+          const stops = await computeScrollStops(page, device.height, job.url)
+          if (typeof onLog === 'function') onLog(`Scroll stops (${stops.length}): ${stops.join(', ')}`)
+
+          for (const targetY of stops) {
+            if (escapePressed) break
+            if (targetY === currentY) continue
+            if (typeof onLog === 'function') onLog(`Scrolling to ${targetY}px`)
+            await smoothScrollTo(page, targetY, speedMs)
+            currentY = targetY
+            const pauseMs = job.scrollPause ?? 1500
+            for (let paused = 0; paused < pauseMs && !escapePressed; paused += 200) {
+              await page.waitForTimeout(Math.min(200, pauseMs - paused))
+            }
+          }
+        }
+
+        if (!escapePressed) await page.waitForTimeout(1000)
+      } finally {
+        try { globalShortcut.unregister('Escape') } catch (_) {}
+        await stopRecording(proc, onLog)
       }
 
-      const speedMs = job.scrollSpeed || 2000
-      let currentY = 0
-
-      if (job.hoverInteractions) {
-        // Hover-driven scroll: visit each interactive element in order
-        const allTargets = await findAllHoverTargets(page, onLog)
-
-        for (const target of allTargets) {
-          if (escapePressed) break
-          const scrollHeight = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
-          const maxScroll = Math.max(0, scrollHeight - device.height)
-          const idealScroll = target.pageY + target.height / 2 - device.height / 2
-          const targetScrollY = Math.min(Math.max(0, idealScroll), maxScroll)
-
-          if (Math.abs(targetScrollY - currentY) > 10) {
-            if (typeof onLog === 'function') onLog(`Scrolling to ${Math.round(targetScrollY)}px`)
-            await smoothScrollTo(page, targetScrollY, speedMs)
-            currentY = targetScrollY
-            await page.waitForTimeout(400)
-          }
-
-          if (escapePressed) break
-          const viewportBox = {
-            x: target.pageX,
-            y: target.pageY - currentY,
-            width: target.width,
-            height: target.height
-          }
-          await interactHover(page, viewportBox, device.width, device.height, onLog, {
-            checkDropdown: target.mayHaveDropdown,
-            isCancelled: () => escapePressed
-          })
-        }
-      } else {
-        // Normal scroll-stop mode
-        const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
-        if (typeof onLog === 'function') onLog(`Page height: ${pageH}px, viewport: ${device.height}px, maxScroll: ${pageH - device.height}px`)
-        const stops = await computeScrollStops(page, device.height, job.url)
-        if (typeof onLog === 'function') onLog(`Scroll stops (${stops.length}): ${stops.join(', ')}`)
-
-        for (const targetY of stops) {
-          if (escapePressed) break
-          if (targetY === currentY) continue
-          if (typeof onLog === 'function') onLog(`Scrolling to ${targetY}px`)
-          await smoothScrollTo(page, targetY, speedMs)
-          currentY = targetY
-          const pauseMs = job.scrollPause ?? 1500
-          for (let paused = 0; paused < pauseMs && !escapePressed; paused += 200) {
-            await page.waitForTimeout(Math.min(200, pauseMs - paused))
-          }
-        }
-      }
-
-      if (!escapePressed) await page.waitForTimeout(1000)
-    } finally {
-      try { globalShortcut.unregister('Escape') } catch (_) {}
-      await stopRecording(proc, onLog)
+      if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
+      if (typeof onFile === 'function') onFile(outputPath)
     }
-
-    if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
-    if (typeof onFile === 'function') onFile(outputPath)
   } finally {
     await close()
   }
