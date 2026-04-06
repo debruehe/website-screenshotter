@@ -213,6 +213,25 @@ window.capturePanel = {
       document.getElementById('cap-device').disabled = e.target.checked
     })
 
+    // Bulk URLs toggle
+    document.getElementById('cap-bulk').addEventListener('change', e => {
+      const isBulk = e.target.checked
+      document.getElementById('cap-crawl-opts').style.display = isBulk ? 'none' : 'block'
+      document.getElementById('cap-bulk-urls').style.display = isBulk ? 'block' : 'none'
+      this._scheduleUrlSettingsSave()
+    })
+
+    // Auto-fill anchor URL from first bulk URL on textarea blur
+    document.getElementById('cap-bulk-urls').addEventListener('blur', () => {
+      const textarea = document.getElementById('cap-bulk-urls')
+      const urlInput = document.getElementById('cap-url')
+      if (!urlInput.value.trim()) {
+        const first = this._parseBulkUrls(textarea.value)[0]
+        if (first) urlInput.value = first
+      }
+      this._scheduleUrlSettingsSave()
+    })
+
     // Scroll mode toggle
     document.querySelectorAll('input[name="scroll-mode"]').forEach(r => {
       r.addEventListener('change', () => {
@@ -301,7 +320,7 @@ window.capturePanel = {
 
     // Save all URL settings on any relevant field change
     const saveFields = [
-      'cap-page-name', 'cap-crawl', 'cap-crawl-max', 'cap-wait',
+      'cap-page-name', 'cap-crawl', 'cap-crawl-max', 'cap-bulk', 'cap-bulk-urls', 'cap-wait',
       'cap-css', 'cap-extend', 'cap-speed', 'cap-pause', 'cap-hover', 'cap-scr-manual', 'cap-smooth-cursor'
     ]
     saveFields.forEach(id => {
@@ -326,6 +345,14 @@ window.capturePanel = {
 
     // Start
     document.getElementById('cap-start').addEventListener('click', () => this.startCapture())
+  },
+
+  _parseBulkUrls(text) {
+    return (text || '').split('\n')
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(s => s.includes('://') ? s : 'https://' + s)
+      .filter(s => { try { new URL(s); return true } catch { return false } })
   },
 
   _normalizeUrl(val) {
@@ -412,6 +439,9 @@ window.capturePanel = {
       screenshotType: document.querySelector('input[name="scrtype"]:checked')?.value || 'full-page',
       crawl: document.getElementById('cap-crawl').checked,
       crawlMaxPages: parseInt(document.getElementById('cap-crawl-max').value) || 30,
+      bulkUrls: document.getElementById('cap-bulk').checked
+        ? this._parseBulkUrls(document.getElementById('cap-bulk-urls').value)
+        : [],
       scrollSpeed: parseInt(document.getElementById('cap-speed')?.value) || 2000,
       scrollPause: parseInt(document.getElementById('cap-pause')?.value) ?? 1500,
       manualMode: (mode === 'screenshot'
@@ -484,6 +514,8 @@ window.capturePanel = {
       scrollPause:       parseInt(document.getElementById('cap-pause')?.value) ?? 1500,
       hoverInteractions: document.getElementById('cap-hover')?.checked ?? false,
       smoothCursor:      document.getElementById('cap-smooth-cursor')?.checked ?? false,
+      bulkMode:          document.getElementById('cap-bulk').checked,
+      bulkUrls:          document.getElementById('cap-bulk-urls').value,
     })
   },
 
@@ -523,6 +555,13 @@ window.capturePanel = {
         if (document.getElementById('cap-manual')?.checked)
           document.getElementById('cap-smooth-cursor-row').style.display = s.smoothCursor !== undefined ? 'block' : 'none'
       }
+      if (s.bulkMode !== undefined) {
+        document.getElementById('cap-bulk').checked = s.bulkMode
+        document.getElementById('cap-crawl-opts').style.display = s.bulkMode ? 'none' : 'block'
+        document.getElementById('cap-bulk-urls').style.display = s.bulkMode ? 'block' : 'none'
+      }
+      if (s.bulkUrls !== undefined)
+        document.getElementById('cap-bulk-urls').value = s.bulkUrls
       // Sync batch/crawl visibility
       document.getElementById('cap-batch-list').style.display =
         document.getElementById('cap-batch').checked ? 'block' : 'none'
