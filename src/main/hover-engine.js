@@ -440,39 +440,44 @@ async function injectSmoothCursor(page) {
 }
 
 /**
- * Injects a touch-style circle cursor for mobile manual recordings.
- * Hides the OS cursor and shows a blue circle that follows the mouse,
- * darkening on press. Re-injects on page navigation.
+ * Injects a subtle click ripple visualizer for manual recordings.
+ * On every mousedown a white ring expands from the click point and fades out.
+ * Works on any background via a white ring + dark hairline shadow.
+ * Re-injects on page navigation.
  */
-async function injectTouchCursor(page) {
+async function injectClickVisualizer(page) {
   const script = () => {
-    if (document.getElementById('__ws_touch_cursor')) return
+    if (document.getElementById('__ws_click_viz_style')) return
 
     const style = document.createElement('style')
-    style.textContent = '*, *::before, *::after { cursor: none !important; }'
+    style.id = '__ws_click_viz_style'
+    style.textContent = `
+      @keyframes __ws_ripple {
+        0%   { transform: translate(-50%,-50%) scale(0.15); opacity: 1; }
+        100% { transform: translate(-50%,-50%) scale(1);    opacity: 0; }
+      }
+      .__ws_ripple {
+        position: fixed;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.95);
+        box-shadow: 0 0 0 1.5px rgba(0,0,0,0.18), inset 0 0 0 1px rgba(0,0,0,0.06);
+        pointer-events: none;
+        z-index: 2147483647;
+        animation: __ws_ripple 0.42s cubic-bezier(0.15,0,0.35,1) forwards;
+      }
+    `
     document.head.appendChild(style)
 
-    const el = document.createElement('div')
-    el.id = '__ws_touch_cursor'
-    el.style.cssText = [
-      'position:fixed', 'top:0', 'left:0', 'width:44px', 'height:44px',
-      'margin:-22px 0 0 -22px', 'border-radius:50%',
-      'background:rgba(0,120,255,0.22)', 'border:2.5px solid rgba(0,120,255,0.75)',
-      'pointer-events:none', 'z-index:2147483647', 'display:none',
-      'will-change:transform'
-    ].join(';')
-    document.documentElement.appendChild(el)
-
-    document.addEventListener('mousemove', e => {
-      el.style.display = 'block'
-      el.style.transform = `translate(${e.clientX}px,${e.clientY}px)`
+    document.addEventListener('mousedown', e => {
+      const el = document.createElement('div')
+      el.className = '__ws_ripple'
+      el.style.left = e.clientX + 'px'
+      el.style.top = e.clientY + 'px'
+      document.documentElement.appendChild(el)
+      el.addEventListener('animationend', () => el.remove())
     }, { passive: true })
-    document.addEventListener('mousedown', () => {
-      el.style.background = 'rgba(0,120,255,0.45)'
-    })
-    document.addEventListener('mouseup', () => {
-      el.style.background = 'rgba(0,120,255,0.22)'
-    })
   }
 
   await page.evaluate(script)
@@ -481,4 +486,4 @@ async function injectTouchCursor(page) {
   })
 }
 
-module.exports = { runHoverInteractions, injectFakeCursor, injectSmoothCursor, injectTouchCursor, findAllHoverTargets, interactHover }
+module.exports = { runHoverInteractions, injectFakeCursor, injectSmoothCursor, injectClickVisualizer, findAllHoverTargets, interactHover }
