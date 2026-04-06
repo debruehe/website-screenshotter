@@ -93,6 +93,11 @@ async function setupBrowser(job, device, onLog) {
   const context = await browser.newContext(contextOptions)
   const page = await context.newPage()
 
+  if (device.width < 1025) {
+    const cdp = await context.newCDPSession(page)
+    await cdp.send('Emulation.setEmitTouchEventsForMouse', { enabled: true, configuration: 'mobile' })
+  }
+
   await page.goto(job.url, { waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
   if (job.auth?.type === 'form') {
     await authHandler.performFormLogin(page, { ...job.auth, password: job.auth._resolvedPassword })
