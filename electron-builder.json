@@ -1,0 +1,15 @@
+{
+  "appId": "com.yourname.webscreenshotter",
+  "productName": "Web Screenshotter",
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": "dmg",
+    "identity": null,
+    "icon": "assets/icon.icns"
+  },
+  "files": [
+    "src/**/*",
+    "node_modules/**/*",
+    "assets/icon.icns"
+  ]
+}
