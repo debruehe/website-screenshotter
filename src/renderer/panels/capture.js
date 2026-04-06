@@ -339,7 +339,7 @@ window.capturePanel = {
     // Add to queue
     document.getElementById('cap-add-queue').addEventListener('click', () => {
       const job = this.buildJob()
-      if (!job.url && !job.bulkUrls.length) return alert('Please enter a URL')
+      if (!job.url && !job.bulkUrls.length) return alert('Please enter a URL or bulk URLs')
       if (window.queuePanel) window.queuePanel.addJob(job)
     })
 
@@ -581,7 +581,7 @@ window.capturePanel = {
     }
 
     const job = this.buildJob()
-    if (!job.url && !job.bulkUrls.length) return alert('Please enter a URL')
+    if (!job.url && !job.bulkUrls.length) return alert('Please enter a URL or bulk URLs')
     await this._saveScrollSettings()
 
     btn.innerHTML = `${ICON_SPINNER}<span>Capturing…</span>`
