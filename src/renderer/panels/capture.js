@@ -204,6 +204,8 @@ window.capturePanel = {
         document.getElementById('screenshot-opts').style.display = isVideo ? 'none' : 'block'
         document.getElementById('video-opts').style.display = isVideo ? 'block' : 'none'
         this._scheduleUrlSettingsSave()
+        const url = this._normalizeUrl(document.getElementById('cap-url').value)
+        if (url) this.loadScrollSettings(url)
       })
     })
 
@@ -369,11 +371,12 @@ window.capturePanel = {
   async _saveScrollSettings() {
     const url = this._normalizeUrl(document.getElementById('cap-url').value)
     if (!url) return
-    const mode = document.querySelector('input[name="scroll-mode"]:checked').value
-    const settings = mode === 'step'
+    const captureMode = document.querySelector('.mode-btn.active')?.dataset.mode || 'screenshot'
+    const scrollMode = document.querySelector('input[name="scroll-mode"]:checked').value
+    const settings = scrollMode === 'step'
       ? { mode: 'step', step: parseInt(document.getElementById('scroll-step').value) || 1000 }
       : { mode: 'custom', positions: this._parsePositions(document.getElementById('scroll-custom').value) }
-    await window.api.saveScrollSettings(url, settings)
+    await window.api.saveScrollSettings(url, captureMode, settings)
   },
 
   _parsePositions(text) {
@@ -383,7 +386,8 @@ window.capturePanel = {
   async loadScrollSettings(url) {
     if (!url) return
     try {
-      const s = await window.api.getScrollSettings(url)
+      const captureMode = document.querySelector('.mode-btn.active')?.dataset.mode || 'screenshot'
+      const s = await window.api.getScrollSettings(url, captureMode)
       if (!s) return
       if (s.mode === 'custom') {
         document.querySelector('input[name="scroll-mode"][value="custom"]').checked = true

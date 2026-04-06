@@ -258,11 +258,11 @@ function register(mainWindow) {
   })
 
   // Scroll settings (per-hostname)
-  ipcMain.handle('scroll:get', (_, { url }) => {
-    try { return getScrollSettings(url) } catch (_) { return null }
+  ipcMain.handle('scroll:get', (_, { url, mode }) => {
+    try { return getScrollSettings(url, mode) } catch (_) { return null }
   })
-  ipcMain.handle('scroll:set', (_, { url, settings }) => {
-    setScrollSettings(url, settings)
+  ipcMain.handle('scroll:set', (_, { url, mode, settings }) => {
+    setScrollSettings(url, mode, settings)
     return { ok: true }
   })
 

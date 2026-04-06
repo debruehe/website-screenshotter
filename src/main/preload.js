@@ -41,8 +41,8 @@ contextBridge.exposeInMainWorld('api', {
   retrySetup: () => ipcRenderer.send('setup:retry'),
 
   // Scroll settings
-  getScrollSettings: (url) => ipcRenderer.invoke('scroll:get', { url }),
-  saveScrollSettings: (url, settings) => ipcRenderer.invoke('scroll:set', { url, settings }),
+  getScrollSettings: (url, mode) => ipcRenderer.invoke('scroll:get', { url, mode }),
+  saveScrollSettings: (url, mode, settings) => ipcRenderer.invoke('scroll:set', { url, mode, settings }),
 
   // Per-URL capture settings
   getUrlSettings: (url) => ipcRenderer.invoke('urlsettings:get', { url }),

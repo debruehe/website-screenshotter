@@ -252,7 +252,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
           } else {
             const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
             if (typeof onLog === 'function') onLog(`${prefix}Page height: ${pageH}px`)
-            const stops = await computeScrollStops(page, device.height, url)
+            const stops = await computeScrollStops(page, device.height, url, 'video')
             if (typeof onLog === 'function') onLog(`${prefix}Scroll stops (${stops.length}): ${stops.join(', ')}`)
             for (const targetY of stops) {
               if (escapePressed) break
@@ -339,7 +339,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         } else {
           const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
           if (typeof onLog === 'function') onLog(`Page height: ${pageH}px, viewport: ${device.height}px, maxScroll: ${pageH - device.height}px`)
-          const stops = await computeScrollStops(page, device.height, job.url)
+          const stops = await computeScrollStops(page, device.height, job.url, 'video')
           if (typeof onLog === 'function') onLog(`Scroll stops (${stops.length}): ${stops.join(', ')}`)
 
           for (const targetY of stops) {

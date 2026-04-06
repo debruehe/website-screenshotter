@@ -184,7 +184,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
           onFile(filePath)
         } else {
           // Single-viewport multi-shot: screenshot at each section stop
-          const stops = await computeScrollStops(page, device.height, url)
+          const stops = await computeScrollStops(page, device.height, url, 'screenshot')
           onLog(`Viewport stops: ${stops.join(', ')}`)
 
           for (let i = 0; i < stops.length; i++) {

@@ -8,18 +8,36 @@ function loadAll() {
   try { return JSON.parse(fs.readFileSync(SCROLL_FILE, 'utf8')) } catch (_) { return {} }
 }
 
-function getForUrl(url) {
+function getForUrl(url, captureMode) {
   try {
     const hostname = new URL(url).hostname
-    return loadAll()[hostname] || null
+    const entry = loadAll()[hostname]
+    if (!entry) return null
+    if (captureMode) {
+      if (entry[captureMode]) return entry[captureMode]
+      // backwards compat: old flat format has 'mode' or 'step' directly on entry
+      if ('mode' in entry || 'step' in entry) return entry
+      return null
+    }
+    return entry
   } catch (_) { return null }
 }
 
-function setForUrl(url, settings) {
+function setForUrl(url, captureMode, settings) {
   try {
     const hostname = new URL(url).hostname
     const all = loadAll()
-    all[hostname] = settings
+    if (!all[hostname]) all[hostname] = {}
+    // Migrate old flat format to nested on first write
+    if ('mode' in all[hostname] || 'step' in all[hostname]) {
+      const old = { ...all[hostname] }
+      all[hostname] = { screenshot: old, video: old }
+    }
+    if (captureMode) {
+      all[hostname][captureMode] = settings
+    } else {
+      all[hostname] = settings
+    }
     fs.mkdirSync(path.dirname(SCROLL_FILE), { recursive: true })
     fs.writeFileSync(SCROLL_FILE, JSON.stringify(all, null, 2))
   } catch (_) {}
@@ -30,8 +48,8 @@ function setForUrl(url, settings) {
  * Step mode: stops at 0, step, 2*step, … up to maxScroll.
  * Custom mode: user-supplied absolute positions, clamped to maxScroll.
  */
-async function computeScrollStops(page, viewportHeight, url) {
-  const settings = getForUrl(url)
+async function computeScrollStops(page, viewportHeight, url, captureMode) {
+  const settings = getForUrl(url, captureMode)
   const scrollHeight = await page.evaluate(() =>
     Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
   )
