@@ -87,6 +87,11 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
       colorScheme: job.darkMode ? 'dark' : 'light'
     }
 
+    if (device.width < 1025) {
+      contextOptions.isMobile = true
+      contextOptions.hasTouch = true
+    }
+
     const anchorUrl = job.url || (job.bulkUrls && job.bulkUrls[0]) || ''
     const savedHttpAuth = anchorUrl ? getHttpAuth(anchorUrl) : null
     const httpCreds = savedHttpAuth || authHandler.buildHttpCredentials(job.auth)
@@ -233,6 +238,11 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
       viewport: { width: device.width, height: device.height + (job.viewportExtend || 0) },
       deviceScaleFactor: 2,
       colorScheme: job.darkMode ? 'dark' : 'light'
+    }
+
+    if (device.width < 1025) {
+      contextOptions.isMobile = true
+      contextOptions.hasTouch = true
     }
 
     const savedHttpAuth = getHttpAuth(job.url)

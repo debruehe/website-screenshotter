@@ -74,6 +74,11 @@ async function setupBrowser(job, device, onLog) {
     colorScheme: job.darkMode ? 'dark' : 'light'
   }
 
+  if (device.width < 1025) {
+    contextOptions.isMobile = true
+    contextOptions.hasTouch = true
+  }
+
   // Per-URL HTTP Basic Auth takes precedence over job-level auth
   const savedHttpAuth = getHttpAuth(job.url)
   const httpCreds = savedHttpAuth || authHandler.buildHttpCredentials(job.auth)
