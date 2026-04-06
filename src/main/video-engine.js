@@ -6,7 +6,7 @@ const { computeScrollStops } = require('./scroll-settings')
 const { getStorageState } = require('./session-manager')
 const { getForUrl: getHttpAuth } = require('./http-auth')
 
-const { runHoverInteractions, injectFakeCursor, findAllHoverTargets, interactHover } = require('./hover-engine')
+const { runHoverInteractions, injectFakeCursor, injectSmoothCursor, findAllHoverTargets, interactHover } = require('./hover-engine')
 const { getFfmpegPath, resolveScreenDeviceIndex, buildCaptureArgs, spawnFfmpeg } = require('./ffmpeg-helper')
 const { videoFilename } = require('./output-manager')
 
@@ -14,6 +14,7 @@ const DEFAULT_CSS = `
 * { scrollbar-width: none !important; }
 *::-webkit-scrollbar { display: none !important; }
 * { -webkit-tap-highlight-color: transparent !important; }
+html, body, * { scroll-behavior: auto !important; }
 `
 
 
@@ -24,30 +25,32 @@ const BROWSER_ARGS = (width, height) => [
   `--disable-infobars`,
   `--disable-features=Translate,TranslateUI`,
   `--disable-translate`,
+  `--disable-component-update`,
+  `--no-first-run`,
   `--lang=en-US`
 ]
 
 /**
- * Eased scroll animation: quartic ease-in-out for a cinematic deceleration.
+ * Smooth scroll to targetY over a fixed duration (ms) with cubic ease-in-out.
+ * Duration is fixed per segment regardless of distance, so the feel is consistent.
  */
-async function smoothScrollTo(page, targetY, currentY, msPerPx) {
-  const distance = Math.abs(targetY - currentY)
-  const duration = (distance / 1000) * msPerPx
-  await page.evaluate(({ targetY, duration }) => {
+async function smoothScrollTo(page, targetY, durationMs) {
+  await page.evaluate(({ targetY, durationMs }) => {
     return new Promise(resolve => {
       const startY = window.scrollY
       const startTime = performance.now()
       function step(now) {
         const elapsed = now - startTime
-        const t = Math.min(elapsed / duration, 1)
-        const eased = t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2
-        window.scrollTo(0, startY + (targetY - startY) * eased)
+        const t = Math.min(elapsed / durationMs, 1)
+        // Cubic ease-in-out
+        const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+        document.documentElement.scrollTop = startY + (targetY - startY) * eased
         if (t < 1) requestAnimationFrame(step)
         else resolve()
       }
       requestAnimationFrame(step)
     })
-  }, { targetY, duration })
+  }, { targetY, durationMs })
 }
 
 /**
@@ -105,12 +108,23 @@ async function setupBrowser(job, device, onLog) {
  * Starts FFmpeg and returns { proc, outputPath }.
  * @param {object} captureOptions - passed to buildCaptureArgs (captureCursor, realtime)
  */
-async function startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog, captureOptions = {}) {
-  const browserChromeH = await page.evaluate(() => Math.max(0, window.outerHeight - window.innerHeight)) + 8
-  if (typeof onLog === 'function') onLog(`Browser chrome height: ${browserChromeH}px (incl. 8px offset)`)
+async function startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog, captureOptions = {}, isManual = false) {
+  const store = require('./store')
+  const { cropYOffset } = store.getSettings()
 
-  const outputPath = path.join(outputFolder, videoFilename(device.id))
-  const args = buildCaptureArgs(screenIndex, device.width, device.height, scaleFactor, outputPath, browserChromeH, captureOptions)
+  const browserChromeH = await page.evaluate(() => Math.max(0, window.outerHeight - window.innerHeight)) + 8
+
+  if (cropYOffset !== undefined) {
+    if (typeof onLog === 'function') onLog(`Using calibrated crop Y: ${cropYOffset}px (logical)`)
+  } else {
+    if (typeof onLog === 'function') onLog(`Auto-detected browser chrome: ${browserChromeH}px — run Calibrate in Settings for precision`)
+  }
+
+  const outputPath = path.join(outputFolder, videoFilename(device.id, isManual))
+  const args = buildCaptureArgs(screenIndex, device.width, device.height, scaleFactor, outputPath, browserChromeH, {
+    ...captureOptions,
+    cropYOffset
+  })
 
   if (typeof onLog === 'function') onLog('Starting FFmpeg screen capture...')
   if (typeof onLog === 'function') onLog('⚠️  If no video is produced, grant Screen Recording permission to Electron in System Settings → Privacy & Security.')
@@ -124,14 +138,26 @@ async function startRecording(page, device, outputFolder, scaleFactor, screenInd
 }
 
 /**
- * Stops FFmpeg gracefully.
+ * Stops FFmpeg gracefully and waits for it to fully exit and flush the MP4.
+ * Sends 'q' to stdin for a clean shutdown, force-kills after 5s if needed.
  */
-async function stopRecording(proc) {
-  if (proc.stdin && !proc.stdin.destroyed) {
-    proc.stdin.write('q')
-    await new Promise(r => setTimeout(r, 2000))
-  }
-  proc.kill('SIGINT')
+async function stopRecording(proc, onLog) {
+  if (typeof onLog === 'function') onLog('Stopping recording…')
+  await new Promise(resolve => {
+    proc.once('close', resolve)
+    // End stdin with 'q' — both queues the quit command and closes the pipe,
+    // which signals EOF to FFmpeg (belt-and-suspenders graceful shutdown)
+    if (proc.stdin && !proc.stdin.destroyed) {
+      try { proc.stdin.end('q') } catch (_) {}
+    }
+    // Force kill after 8s if FFmpeg hasn't exited
+    const timer = setTimeout(() => {
+      if (typeof onLog === 'function') onLog('FFmpeg did not exit gracefully, force-killing…')
+      try { proc.kill('SIGKILL') } catch (_) {}
+    }, 8000)
+    proc.once('close', () => clearTimeout(timer))
+  })
+  if (typeof onLog === 'function') onLog('Recording stopped.')
 }
 
 /**
@@ -153,11 +179,22 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
 
     const { proc, outputPath } = await startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog)
 
+    let escapePressed = false
+    const escapeHandler = () => {
+      escapePressed = true
+      try { globalShortcut.unregister('Escape') } catch (_) {}
+      if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
+    }
+    try { globalShortcut.register('Escape', escapeHandler) } catch (_) {}
+
     try {
       await page.waitForTimeout(500)
 
-      if (typeof onLog === 'function') onLog(`Waiting ${job.heroWaitSeconds ?? 15}s for hero content...`)
-      await page.waitForTimeout((job.heroWaitSeconds ?? 15) * 1000)
+      if (typeof onLog === 'function') onLog(`Waiting ${job.heroWaitSeconds ?? 15}s for hero content... (press Escape to stop early)`)
+      const heroMs = (job.heroWaitSeconds ?? 15) * 1000
+      for (let waited = 0; waited < heroMs && !escapePressed; waited += 200) {
+        await page.waitForTimeout(Math.min(200, heroMs - waited))
+      }
 
       const speedMs = job.scrollSpeed || 2000
       let currentY = 0
@@ -167,18 +204,20 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         const allTargets = await findAllHoverTargets(page, onLog)
 
         for (const target of allTargets) {
-          const scrollHeight = await page.evaluate(() => document.body.scrollHeight)
+          if (escapePressed) break
+          const scrollHeight = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
           const maxScroll = Math.max(0, scrollHeight - device.height)
           const idealScroll = target.pageY + target.height / 2 - device.height / 2
           const targetScrollY = Math.min(Math.max(0, idealScroll), maxScroll)
 
           if (Math.abs(targetScrollY - currentY) > 10) {
             if (typeof onLog === 'function') onLog(`Scrolling to ${Math.round(targetScrollY)}px`)
-            await smoothScrollTo(page, targetScrollY, currentY, speedMs)
+            await smoothScrollTo(page, targetScrollY, speedMs)
             currentY = targetScrollY
             await page.waitForTimeout(400)
           }
 
+          if (escapePressed) break
           const viewportBox = {
             x: target.pageX,
             y: target.pageY - currentY,
@@ -186,26 +225,34 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
             height: target.height
           }
           await interactHover(page, viewportBox, device.width, device.height, onLog, {
-            checkDropdown: target.mayHaveDropdown
+            checkDropdown: target.mayHaveDropdown,
+            isCancelled: () => escapePressed
           })
         }
       } else {
         // Normal scroll-stop mode
+        const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
+        if (typeof onLog === 'function') onLog(`Page height: ${pageH}px, viewport: ${device.height}px, maxScroll: ${pageH - device.height}px`)
         const stops = await computeScrollStops(page, device.height, job.url)
-        if (typeof onLog === 'function') onLog(`Scroll stops: ${stops.join(', ')}`)
+        if (typeof onLog === 'function') onLog(`Scroll stops (${stops.length}): ${stops.join(', ')}`)
 
         for (const targetY of stops) {
+          if (escapePressed) break
           if (targetY === currentY) continue
           if (typeof onLog === 'function') onLog(`Scrolling to ${targetY}px`)
-          await smoothScrollTo(page, targetY, currentY, speedMs)
+          await smoothScrollTo(page, targetY, speedMs)
           currentY = targetY
-          await page.waitForTimeout(job.scrollPause ?? 1500)
+          const pauseMs = job.scrollPause ?? 1500
+          for (let paused = 0; paused < pauseMs && !escapePressed; paused += 200) {
+            await page.waitForTimeout(Math.min(200, pauseMs - paused))
+          }
         }
       }
 
-      await page.waitForTimeout(1000)
+      if (!escapePressed) await page.waitForTimeout(1000)
     } finally {
-      await stopRecording(proc)
+      try { globalShortcut.unregister('Escape') } catch (_) {}
+      await stopRecording(proc, onLog)
     }
 
     if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
@@ -233,9 +280,17 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
     // Bring browser window to front so it receives OS mouse/keyboard events
     await page.bringToFront()
 
+    // Smooth cursor: inject spring-physics fake cursor and hide OS cursor so
+    // the real cursor doesn't appear doubled in the recording
+    if (job.smoothCursor) {
+      await injectSmoothCursor(page)
+      if (typeof onLog === 'function') onLog('Smooth cursor active.')
+    }
+
     const { proc, outputPath } = await startRecording(
       page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
-      { captureCursor: true }
+      { captureCursor: !job.smoothCursor },
+      true /* isManual */
     )
 
     if (typeof onLog === 'function') onLog('Manual recording active — press Escape to stop and save.')
@@ -252,10 +307,10 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
     } finally {
       // Ensure shortcut is always unregistered even if something else throws
       try { globalShortcut.unregister('Escape') } catch (_) {}
-      await stopRecording(proc)
+      await stopRecording(proc, onLog)
     }
 
-    if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id)}`)
+    if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(device.id, true)}`)
     if (typeof onFile === 'function') onFile(outputPath)
   } finally {
     await close()

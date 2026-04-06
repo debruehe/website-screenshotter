@@ -11,6 +11,17 @@ window.settingsPanel = {
       <div class="field"><label>Page load timeout (s)</label><input type="number" id="s-timeout" value="30" min="5" max="120" style="width:100px"></div>
       <div class="field"><label>FFmpeg path (leave blank to use bundled)</label><input type="text" id="s-ffmpeg" placeholder="(bundled)"></div>
 
+      <div class="section-header">Video Crop Calibration</div>
+      <div class="field">
+        <label>Capture top Y offset (logical px)</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+          <span id="s-crop-display" style="font-size:13px;color:var(--text-secondary)">Auto-detect</span>
+          <button id="s-calibrate" class="btn-sm">Calibrate…</button>
+          <button id="s-crop-reset" class="btn-sm btn-danger" style="display:none">Reset to auto</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Opens a browser with a draggable red line. Align it with the top of the page content, then click Save.</div>
+      </div>
+
       <div class="section-header">Quiet Mode (Video)</div>
       <div class="field">
         <label style="display:flex;align-items:center;gap:8px;color:var(--text)">
@@ -51,7 +62,22 @@ window.settingsPanel = {
     document.getElementById('s-apps').value = (s.quietModeApps || []).join('\n')
     document.getElementById('s-relaunch').checked = s.quietModeRelaunch ?? true
     document.getElementById('s-quiet-opts').style.display = s.quietMode ? 'block' : 'none'
+    this._refreshCropDisplay(s.cropYOffset)
     await this.loadDevices()
+  },
+
+  _refreshCropDisplay(cropYOffset) {
+    const display = document.getElementById('s-crop-display')
+    const resetBtn = document.getElementById('s-crop-reset')
+    if (cropYOffset !== undefined && cropYOffset !== null) {
+      display.textContent = `${cropYOffset}px`
+      display.style.color = 'var(--text)'
+      resetBtn.style.display = 'inline-flex'
+    } else {
+      display.textContent = 'Auto-detect'
+      display.style.color = 'var(--text-secondary)'
+      resetBtn.style.display = 'none'
+    }
   },
 
   async loadDevices() {
@@ -80,6 +106,24 @@ window.settingsPanel = {
 
     document.getElementById('s-quiet').addEventListener('change', e => {
       document.getElementById('s-quiet-opts').style.display = e.target.checked ? 'block' : 'none'
+    })
+
+    document.getElementById('s-calibrate').addEventListener('click', async () => {
+      const btn = document.getElementById('s-calibrate')
+      btn.disabled = true
+      btn.textContent = 'Opening…'
+      const result = await window.api.startCalibration()
+      btn.disabled = false
+      btn.textContent = 'Calibrate…'
+      if (result?.ok) {
+        const s = await window.api.getSettings()
+        this._refreshCropDisplay(s.cropYOffset)
+      }
+    })
+
+    document.getElementById('s-crop-reset').addEventListener('click', async () => {
+      await window.api.resetCropOffset()
+      this._refreshCropDisplay(undefined)
     })
 
     document.getElementById('s-add-device').addEventListener('click', async () => {

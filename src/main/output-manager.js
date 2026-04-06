@@ -16,6 +16,10 @@ function slugify(urlPath) {
   return cleaned || 'index'
 }
 
+function slugifyCustomName(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'page'
+}
+
 function sessionFolderName(url, date, time, deviceId, isBatch) {
   const hostname = new URL(url).hostname
   if (isBatch) return `${hostname}_${date}_${time}`
@@ -32,14 +36,16 @@ function screenshotFilename(urlPath, deviceId) {
   return `${slugify(urlPath)}--${deviceId}.png`
 }
 
-function videoFilename(deviceId) {
-  return `scroll--${deviceId}.mp4`
+function videoFilename(deviceId, isManual) {
+  return isManual ? `scroll--manual--${deviceId}.mp4` : `scroll--${deviceId}.mp4`
 }
+
+function pad2(n) { return String(n).padStart(2, '0') }
 
 function nowStamps() {
   const now = new Date()
-  const date = now.toISOString().slice(0, 10)
-  const time = now.toISOString().slice(11, 16).replace(':', '-')
+  const date = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
+  const time = `${pad2(now.getHours())}-${pad2(now.getMinutes())}`
   return { date, time }
 }
 
@@ -76,7 +82,7 @@ function exportZip(sessionFolder) {
 }
 
 module.exports = {
-  slugify, sessionFolderName, createSessionFolder,
+  slugify, slugifyCustomName, sessionFolderName, createSessionFolder,
   screenshotFilename, videoFilename, nowStamps,
   getHistory, addHistoryEntry, deleteHistoryEntry, exportZip
 }

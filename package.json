@@ -1,6 +1,6 @@
 {
   "name": "web-screenshotter",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "macOS app for retina website screenshots and scroll videos",
   "main": "src/main/index.js",
   "scripts": {

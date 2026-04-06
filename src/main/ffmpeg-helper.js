@@ -45,14 +45,18 @@ function resolveScreenDeviceIndex(ffmpegPath) {
  * @param {boolean} options.captureCursor - include OS cursor in recording (manual mode)
  */
 function buildCaptureArgs(deviceIndex, width, height, scaleFactor, outputPath, browserChromeH = 0, options = {}) {
-  const { captureCursor = false } = options
+  const { captureCursor = false, cropYOffset } = options
   const W = width * scaleFactor
   const H = height * scaleFactor
-  const Y = (23 + browserChromeH) * scaleFactor  // macOS menu bar + browser toolbar
+  // cropYOffset (logical px) comes from manual calibration; falls back to auto-detect
+  const Y = cropYOffset !== undefined
+    ? Math.round(cropYOffset * scaleFactor)
+    : (23 + browserChromeH) * scaleFactor
   return [
     '-f', 'avfoundation',
     '-capture_cursor', captureCursor ? '1' : '0',
     '-framerate', '60',
+    '-use_wallclock_as_timestamps', '1',
     '-i', deviceIndex,
     '-vf', `crop=${W}:${H}:0:${Y}`,
     '-r', '60',
@@ -60,6 +64,8 @@ function buildCaptureArgs(deviceIndex, width, height, scaleFactor, outputPath, b
     '-b:v', '20000k',
     '-realtime', '1',
     '-pix_fmt', 'yuv420p',
+    '-max_interleave_delta', '0',
+    '-movflags', '+faststart',
     outputPath
   ]
 }
@@ -69,9 +75,16 @@ function buildCaptureArgs(deviceIndex, width, height, scaleFactor, outputPath, b
  * onLog receives stderr lines.
  */
 function spawnFfmpeg(ffmpegPath, args, onLog) {
-  const proc = spawn(ffmpegPath, args)
+  const proc = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] })
   if (typeof onLog === 'function') {
-    proc.stderr.on('data', data => onLog(data.toString()))
+    proc.stderr.on('data', data => {
+      const lines = data.toString().split('\n')
+      for (const line of lines) {
+        if (line && !line.includes('Invalid DTS') && !line.includes('replacing by guess')) {
+          onLog(line)
+        }
+      }
+    })
   }
   proc.on('error', err => { if (typeof onLog === 'function') onLog(`FFmpeg spawn error: ${err.message}`) })
   return proc

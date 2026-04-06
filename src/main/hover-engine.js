@@ -19,7 +19,7 @@ async function injectFakeCursor(page) {
     }
     const el = document.createElement('div')
     el.id = '__ws_cursor'
-    el.style.cssText = 'position:fixed;top:0;left:0;width:32px;height:32px;pointer-events:none;z-index:2147483647;display:none;will-change:transform'
+    el.style.cssText = 'position:fixed;top:0;left:0;width:32px;height:32px;pointer-events:none;z-index:2147483647;display:none;opacity:1;will-change:transform'
     el.innerHTML = defaultSvg
     document.documentElement.appendChild(el)
 
@@ -29,7 +29,18 @@ async function injectFakeCursor(page) {
       window.__wsCursor.y = y
     }
     window.__wsSetCursorSvg = function(svg) { el.innerHTML = svg }
-    window.__wsShowCursor = function(show) { el.style.display = show ? 'block' : 'none' }
+    window.__wsShowCursor = function(show) {
+      if (show) {
+        clearTimeout(el._fadeTimer)
+        el.style.transition = ''
+        el.style.opacity = '1'
+        el.style.display = 'block'
+      } else {
+        el.style.transition = 'opacity 0.8s ease'
+        el.style.opacity = '0'
+        el._fadeTimer = setTimeout(() => { el.style.display = 'none'; el.style.transition = '' }, 850)
+      }
+    }
   }, { defaultSvg: DEFAULT_CURSOR_SVG, handSvg: HAND_CURSOR_SVG, defaultHotspot: DEFAULT_HOTSPOT, handHotspot: HAND_HOTSPOT })
 }
 
@@ -63,10 +74,11 @@ async function animateCursor(page, toX, toY, duration, arrivalSvg, arrivalHotspo
 }
 
 /**
- * Queries the page for a visible dropdown/submenu item near the given viewport position.
- * Called after hovering a nav item to find opened dropdown children.
+ * Queries the page for ALL visible dropdown/submenu items near the given viewport position.
+ * Called after hovering a nav item to find all opened dropdown children.
+ * Returns items sorted top-to-bottom, left-to-right.
  */
-async function findDropdownNear(page, viewportCenterX, viewportCenterY) {
+async function findDropdownItems(page, viewportCenterX, viewportCenterY) {
   return page.evaluate(({ cx, cy }) => {
     const DROPDOWN_SELECTORS = [
       '[role="menu"] a', '[role="menu"] button', '[role="menuitem"]',
@@ -75,10 +87,13 @@ async function findDropdownNear(page, viewportCenterX, viewportCenterY) {
       'nav ul ul a', 'nav ul ul li', 'header ul ul a',
       '[class*="dropdown"] a', '[class*="flyout"] a', '[class*="megamenu"] a',
     ]
+    const seen = new Set()
+    const results = []
     for (const sel of DROPDOWN_SELECTORS) {
       let els
       try { els = Array.from(document.querySelectorAll(sel)) } catch { continue }
       for (const el of els) {
+        if (seen.has(el)) continue
         const style = window.getComputedStyle(el)
         if (style.display === 'none' || style.visibility === 'hidden') continue
         if (parseFloat(style.opacity) < 0.1) continue
@@ -88,23 +103,37 @@ async function findDropdownNear(page, viewportCenterX, viewportCenterY) {
         // Must be reasonably close horizontally to the hovered nav item
         const elCX = rect.left + rect.width / 2
         if (Math.abs(elCX - cx) > 500) continue
-        return {
+        seen.add(el)
+        results.push({
           x: rect.left + window.scrollX,
           y: rect.top + window.scrollY,
           width: rect.width,
           height: rect.height
-        }
+        })
       }
     }
-    return null
+    results.sort((a, b) => a.y - b.y || a.x - b.x)
+    return results
   }, { cx: viewportCenterX, cy: viewportCenterY })
+}
+
+/**
+ * Interruptible wait: chunks into 100ms steps, stops early if isCancelled() returns true.
+ */
+async function waitMs(page, ms, isCancelled) {
+  for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+    if (isCancelled?.()) return
+    await page.waitForTimeout(Math.min(100, ms - elapsed))
+  }
 }
 
 /**
  * Moves fake cursor and Playwright mouse to a target element.
  * Handles dropdown detection for nav items.
+ * opts.isCancelled — optional function returning true when Escape has been pressed.
  */
 async function interactHover(page, box, viewportWidth, viewportHeight, onLog, opts = {}) {
+  const { isCancelled } = opts
   const targetX = box.x + box.width / 2
   const targetY = box.y + box.height / 2
   const fromX = viewportWidth / 2
@@ -122,28 +151,36 @@ async function interactHover(page, box, viewportWidth, viewportHeight, onLog, op
     page.mouse.move(targetX, targetY, { steps: Math.round(travelMs / 20) })
   ])
 
-  // If this is a nav item that may have a dropdown, wait and check
+  if (isCancelled?.()) { await page.evaluate(() => window.__wsShowCursor(false)); return }
+
+  // If this is a nav item that may have a dropdown, wait then visit ALL visible items
   if (opts.checkDropdown) {
-    await page.waitForTimeout(700)
+    await waitMs(page, 600, isCancelled)
+    if (isCancelled?.()) { await page.evaluate(() => window.__wsShowCursor(false)); return }
     const currentScrollY = await page.evaluate(() => window.scrollY)
-    const dropItem = await findDropdownNear(page, targetX, targetY)
-    if (dropItem) {
-      const dropViewportX = dropItem.x - (await page.evaluate(() => window.scrollX))
-      const dropViewportY = dropItem.y - currentScrollY
-      const dropCX = dropViewportX + dropItem.width / 2
-      const dropCY = dropViewportY + dropItem.height / 2
-      if (typeof onLog === 'function') onLog(`Found dropdown item — moving to (${Math.round(dropCX)}, ${Math.round(dropCY)})`)
-      await Promise.all([
-        animateCursor(page, dropCX, dropCY, 350, HAND_CURSOR_SVG, HAND_HOTSPOT),
-        page.mouse.move(dropCX, dropCY, { steps: 8 })
-      ])
-      await page.waitForTimeout(900)
+    const dropItems = await findDropdownItems(page, targetX, targetY)
+    if (dropItems.length > 0) {
+      if (typeof onLog === 'function') onLog(`Found ${dropItems.length} dropdown item(s)`)
+      const scrollX = await page.evaluate(() => window.scrollX)
+      for (const dropItem of dropItems) {
+        if (isCancelled?.()) break
+        const dropCX = (dropItem.x - scrollX) + dropItem.width / 2
+        const dropCY = (dropItem.y - currentScrollY) + dropItem.height / 2
+        await Promise.all([
+          animateCursor(page, dropCX, dropCY, 300, HAND_CURSOR_SVG, HAND_HOTSPOT),
+          page.mouse.move(dropCX, dropCY, { steps: 8 })
+        ])
+        await waitMs(page, 350, isCancelled)
+      }
+      if (!isCancelled?.()) await waitMs(page, 500, isCancelled) // linger on last item
     } else {
-      await page.waitForTimeout(900)
+      await waitMs(page, 900, isCancelled)
     }
   } else {
-    await page.waitForTimeout(1500)
+    await waitMs(page, 1500, isCancelled)
   }
+
+  if (isCancelled?.()) { await page.evaluate(() => window.__wsShowCursor(false)); return }
 
   // Return to center
   const returnMs = travelMs * 0.7
@@ -179,12 +216,21 @@ async function findAllHoverTargets(page, onLog) {
         ...extra
       }
     }
+    // Elements inside dropdown containers must NOT be in the initial target list —
+    // they will be visited dynamically by findDropdownItems after their parent is hovered.
+    function isInDropdownContainer(el) {
+      return !!el.closest([
+        '[role="menu"]', '.dropdown-menu', '.sub-menu', '.submenu',
+        '[class*="dropdown-menu"]', '[class*="flyout"]', '[class*="megamenu"]'
+      ].join(', '))
+    }
 
     const seen = new Set()
     const navItems = []
     const pageItems = []
 
-    // Nav / header items first — these drive dropdown interactions
+    // Nav / header TOP-LEVEL items only — nested items are handled by findDropdownItems
+    // Exclude nav ul ul / header ul ul selectors (those are dropdown children, not triggers)
     const navEls = document.querySelectorAll([
       'nav a[href]', 'nav button', 'nav [role="button"]',
       'header a[href]', 'header button',
@@ -195,7 +241,7 @@ async function findAllHoverTargets(page, onLog) {
     ].join(', '))
 
     for (const el of navEls) {
-      if (seen.has(el) || !isVisible(el)) continue
+      if (seen.has(el) || !isVisible(el) || isInDropdownContainer(el)) continue
       seen.add(el)
       const parent = el.parentElement
       const mayHaveDropdown =
@@ -206,12 +252,12 @@ async function findAllHoverTargets(page, onLog) {
       navItems.push(getInfo(el, { isNav: true, mayHaveDropdown }))
     }
 
-    // General interactive elements
+    // General interactive elements — also exclude anything inside a dropdown container
     const generalEls = document.querySelectorAll(
       'a[href], button:not([disabled]), [role="button"]:not([disabled]), [role="tab"]'
     )
     for (const el of generalEls) {
-      if (seen.has(el) || !isVisible(el)) continue
+      if (seen.has(el) || !isVisible(el) || isInDropdownContainer(el)) continue
       seen.add(el)
       pageItems.push(getInfo(el, { isNav: false, mayHaveDropdown: false }))
     }
@@ -251,4 +297,146 @@ async function runHoverInteractions(page, scrollY, device, onLog) {
   }
 }
 
-module.exports = { runHoverInteractions, injectFakeCursor, findAllHoverTargets, interactHover }
+/**
+ * Injects a smooth cursor for manual recording using Catmull-Rom path
+ * interpolation. Instead of spring physics (which causes post-stop wiggle),
+ * this samples the real cursor at ~30 fps, then the fake cursor runs along
+ * the Catmull-Rom spline through those samples — producing genuinely smooth
+ * curves through erratic movement with zero oscillation at rest.
+ *
+ * Also detects clickable elements under the cursor and swaps to the hand SVG.
+ * Re-injects on page navigation automatically.
+ */
+async function injectSmoothCursor(page) {
+  const script = ({ arrowSvg, handSvg, ax, ay, hx, hy }) => {
+    if (document.getElementById('__ws_smooth_cursor')) return
+
+    // Hide OS cursor
+    const style = document.createElement('style')
+    style.id = '__ws_cursor_hide'
+    style.textContent = '*, *::before, *::after { cursor: none !important; }'
+    document.head.appendChild(style)
+
+    // Fake cursor element
+    const el = document.createElement('div')
+    el.id = '__ws_smooth_cursor'
+    el.style.cssText = 'position:fixed;top:0;left:0;width:32px;height:32px;pointer-events:none;z-index:2147483647;will-change:transform;display:none'
+    el.innerHTML = arrowSvg
+    document.documentElement.appendChild(el)
+
+    // --- Catmull-Rom spline helper ---
+    function cr(p0, p1, p2, p3, t) {
+      return 0.5 * (
+        2 * p1 +
+        (-p0 + p2) * t +
+        (2*p0 - 5*p1 + 4*p2 - p3) * t * t +
+        (-p0 + 3*p1 - 3*p2 + p3) * t * t * t
+      )
+    }
+
+    // --- State ---
+    const SAMPLE_MS  = 33    // ~30fps sampling of real cursor
+    const LAG        = 1.8   // Display this many samples behind latest (smoothness)
+    const MAX_SAMPLES = 14
+
+    let rx = 0, ry = 0       // Live real cursor position
+    let sx = 0, sy = 0       // Smoothed display position
+    let samples    = []
+    let trimCount  = 0       // How many samples shifted off the front
+    let displayT   = 0       // Fractional index in global sample space
+    let lastSample = 0
+    let lastFrame  = performance.now()
+    let active     = false
+    let isHand     = false
+
+    document.addEventListener('mousemove', e => {
+      rx = e.clientX; ry = e.clientY
+      if (!active) {
+        sx = rx; sy = ry
+        samples    = [{ x: rx, y: ry }]
+        trimCount  = 0
+        displayT   = 0
+        lastSample = performance.now()
+        active     = true
+        el.style.display = 'block'
+      }
+    }, { passive: true })
+
+    // --- Hand cursor detection ---
+    function updateCursorShape() {
+      const under = document.elementFromPoint(sx, sy)
+      let hand = false
+      let node = under
+      while (node && node !== document.documentElement) {
+        const tag = node.tagName && node.tagName.toLowerCase()
+        if (['a','button','select','input','textarea','label','summary'].includes(tag)) { hand = true; break }
+        if (window.getComputedStyle(node).cursor === 'pointer') { hand = true; break }
+        node = node.parentElement
+      }
+      if (hand !== isHand) {
+        isHand = hand
+        el.innerHTML = hand ? handSvg : arrowSvg
+      }
+    }
+
+    ;(function tick(now) {
+      const dt = Math.min((now - lastFrame) / 1000, 0.05)
+      lastFrame = now
+
+      if (active) {
+        // Periodic sample
+        if (now - lastSample >= SAMPLE_MS) {
+          samples.push({ x: rx, y: ry })
+          lastSample = now
+          while (samples.length > MAX_SAMPLES) {
+            samples.shift()
+            trimCount++
+            if (displayT < trimCount) displayT = trimCount
+          }
+        }
+
+        if (samples.length >= 2) {
+          // Advance displayT toward (latest sample − LAG), slightly faster than
+          // sample rate so the cursor catches up after fast bursts
+          const targetT = trimCount + samples.length - 1 - LAG
+          const speed   = (1000 / SAMPLE_MS) * 1.5   // samples per second
+          if (displayT < targetT) displayT = Math.min(displayT + speed * dt, targetT)
+
+          // Map global displayT to local array index
+          const localT = displayT - trimCount
+          const idx    = Math.min(Math.floor(localT), samples.length - 2)
+          const t      = localT - idx
+          const i0 = Math.max(0, idx - 1)
+          const i1 = idx
+          const i2 = Math.min(samples.length - 1, idx + 1)
+          const i3 = Math.min(samples.length - 1, idx + 2)
+
+          sx = cr(samples[i0].x, samples[i1].x, samples[i2].x, samples[i3].x, t)
+          sy = cr(samples[i0].y, samples[i1].y, samples[i2].y, samples[i3].y, t)
+        } else if (samples.length === 1) {
+          sx = samples[0].x; sy = samples[0].y
+        }
+
+        updateCursorShape()
+        const hotX = isHand ? hx : ax
+        const hotY = isHand ? hy : ay
+        el.style.transform = `translate(${sx - hotX}px,${sy - hotY}px)`
+      }
+
+      requestAnimationFrame(tick)
+    })(performance.now())
+  }
+
+  const args = {
+    arrowSvg: DEFAULT_CURSOR_SVG, handSvg: HAND_CURSOR_SVG,
+    ax: DEFAULT_HOTSPOT.x, ay: DEFAULT_HOTSPOT.y,
+    hx: HAND_HOTSPOT.x,   hy: HAND_HOTSPOT.y
+  }
+
+  await page.evaluate(script, args)
+  page.on('load', async () => {
+    try { await page.evaluate(script, args) } catch (_) {}
+  })
+}
+
+module.exports = { runHoverInteractions, injectFakeCursor, injectSmoothCursor, findAllHoverTargets, interactHover }

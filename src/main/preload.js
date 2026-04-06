@@ -44,7 +44,15 @@ contextBridge.exposeInMainWorld('api', {
   getScrollSettings: (url) => ipcRenderer.invoke('scroll:get', { url }),
   saveScrollSettings: (url, settings) => ipcRenderer.invoke('scroll:set', { url, settings }),
 
+  // Per-URL capture settings
+  getUrlSettings: (url) => ipcRenderer.invoke('urlsettings:get', { url }),
+  saveUrlSettings: (url, settings) => ipcRenderer.invoke('urlsettings:set', { url, settings }),
+
   // HTTP Basic Auth
   getHttpAuth: (url) => ipcRenderer.invoke('httpauth:get', { url }),
   saveHttpAuth: (url, credentials) => ipcRenderer.invoke('httpauth:set', { url, credentials }),
+
+  // Crop calibration
+  startCalibration: () => ipcRenderer.invoke('calibrate:start'),
+  resetCropOffset:  () => ipcRenderer.invoke('calibrate:reset'),
 })

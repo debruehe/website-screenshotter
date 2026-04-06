@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1e1e22"/>
+      <stop offset="100%" stop-color="#2a2a30"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5ba3fc"/>
+      <stop offset="100%" stop-color="#3d7dd8"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS rounded square background -->
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <!-- Viewfinder / screenshot frame -->
+  <g stroke="#555" stroke-width="28" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top-left corner -->
+    <path d="M300 420 L300 320 Q300 280 340 280 L420 280"/>
+    <!-- Top-right corner -->
+    <path d="M604 280 L684 280 Q724 280 724 320 L724 420"/>
+    <!-- Bottom-left corner -->
+    <path d="M300 604 L300 704 Q300 744 340 744 L420 744"/>
+    <!-- Bottom-right corner -->
+    <path d="M604 744 L684 744 Q724 744 724 704 L724 604"/>
+  </g>
+  <!-- Lens / capture circle -->
+  <circle cx="512" cy="512" r="110" fill="none" stroke="url(#lens)" stroke-width="32"/>
+  <circle cx="512" cy="512" r="42" fill="url(#lens)" opacity="0.9"/>
+</svg>

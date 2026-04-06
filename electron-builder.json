@@ -4,10 +4,12 @@
   "mac": {
     "category": "public.app-category.productivity",
     "target": "dmg",
-    "identity": null
+    "identity": null,
+    "icon": "assets/icon.icns"
   },
   "files": [
     "src/**/*",
-    "node_modules/**/*"
+    "node_modules/**/*",
+    "assets/icon.icns"
   ]
 }

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 100vw;
+      height: 64px;
+      background: transparent;
+      -webkit-app-region: drag;
+      user-select: none;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* The capture line — bottom edge of the strip */
+    .line {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: #ff3b30;
+      box-shadow: 0 0 10px rgba(255,59,48,0.7), 0 0 3px #ff3b30;
+    }
+
+    /* Badge centred above the line */
+    .badge {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #ff3b30;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 12px 5px 14px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      white-space: nowrap;
+      -webkit-app-region: no-drag;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.35);
+    }
+
+    .badge span {
+      opacity: 0.88;
+      letter-spacing: -0.01em;
+    }
+
+    .btn {
+      -webkit-app-region: no-drag;
+      border: none;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 11px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .btn-save {
+      background: #fff;
+      color: #ff3b30;
+    }
+
+    .btn-cancel {
+      background: rgba(255,255,255,0.22);
+      color: #fff;
+    }
+
+    .btn:hover { opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <div class="badge">
+    <span>↕ drag · align line with top of page content</span>
+    <button class="btn btn-save" id="save">Save Position</button>
+    <button class="btn btn-cancel" id="cancel">Cancel</button>
+  </div>
+  <div class="line"></div>
+
+  <script>
+    document.getElementById('save').addEventListener('click', () => window.calibrate.save())
+    document.getElementById('cancel').addEventListener('click', () => window.calibrate.cancel())
+  </script>
+</body>
+</html>

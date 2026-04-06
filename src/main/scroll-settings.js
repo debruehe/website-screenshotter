@@ -32,7 +32,9 @@ function setForUrl(url, settings) {
  */
 async function computeScrollStops(page, viewportHeight, url) {
   const settings = getForUrl(url)
-  const scrollHeight = await page.evaluate(() => document.body.scrollHeight)
+  const scrollHeight = await page.evaluate(() =>
+    Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+  )
   const maxScroll = Math.max(0, scrollHeight - viewportHeight)
 
   if (settings?.mode === 'custom' && settings.positions?.length > 0) {

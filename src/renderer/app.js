@@ -23,6 +23,36 @@ window.queuePanel && window.queuePanel.init()
 window.historyPanel && window.historyPanel.init()
 window.settingsPanel && window.settingsPanel.init()
 
+// Console resize
+;(function () {
+  const handle  = document.getElementById('log-resize')
+  const logArea = document.getElementById('log-area')
+  let dragging = false, startY = 0, startH = 0
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true
+    startY = e.clientY
+    startH = logArea.offsetHeight
+    document.body.style.cursor = 'ns-resize'
+    document.body.style.userSelect = 'none'
+    e.preventDefault()
+  })
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return
+    const delta = startY - e.clientY
+    const newH = Math.max(40, Math.min(startH + delta, window.innerHeight - 160))
+    logArea.style.height = newH + 'px'
+  })
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return
+    dragging = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  })
+})()
+
 // First-launch setup progress
 window.api.onSetupProgress(data => {
   const modal = document.getElementById('setup-modal')

@@ -9,6 +9,7 @@ process.on('unhandledRejection', (reason) => {
 })
 
 let mainWindow
+let ipcRegistered = false
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -17,6 +18,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
+    icon: path.join(__dirname, '../../assets/icon.icns'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -24,7 +26,12 @@ function createWindow() {
     }
   })
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
-  ipcHandlers.register(mainWindow)
+  if (!ipcRegistered) {
+    ipcHandlers.register(mainWindow)
+    ipcRegistered = true
+  } else {
+    ipcHandlers.updateWindow(mainWindow)
+  }
 }
 
 app.whenReady().then(async () => {
