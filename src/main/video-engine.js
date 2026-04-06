@@ -109,6 +109,10 @@ async function setupBrowser(job, device, onLog) {
   await page.waitForTimeout(2000)
   await page.reload({ waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
 
+  // Click a neutral spot to dismiss browser UI overlays (e.g. translation bar)
+  await page.waitForTimeout(400)
+  await page.mouse.click(Math.round(w / 2), 8)
+
   await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
 
   return { page, close: async () => { try { await browser.close() } catch (_) {} } }
