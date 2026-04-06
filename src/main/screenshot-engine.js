@@ -87,14 +87,15 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
       colorScheme: job.darkMode ? 'dark' : 'light'
     }
 
-    const savedHttpAuth = getHttpAuth(job.url)
+    const anchorUrl = job.url || (job.bulkUrls && job.bulkUrls[0]) || ''
+    const savedHttpAuth = anchorUrl ? getHttpAuth(anchorUrl) : null
     const httpCreds = savedHttpAuth || authHandler.buildHttpCredentials(job.auth)
     if (httpCreds) contextOptions.httpCredentials = httpCreds
 
-    const storageState = getStorageState(job.url)
+    const storageState = anchorUrl ? getStorageState(anchorUrl) : null
     if (storageState) {
       contextOptions.storageState = storageState
-      onLog(`Using saved session for ${new URL(job.url).hostname}`)
+      onLog(`Using saved session for ${new URL(anchorUrl).hostname}`)
     }
 
     const context = await browser.newContext(contextOptions)
