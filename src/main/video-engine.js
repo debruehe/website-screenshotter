@@ -176,6 +176,8 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
 
   try {
     const isBulk = job.bulkUrls && job.bulkUrls.length > 0
+    // In bulk mode, setupBrowser navigated to job.url as a warm-up; the bulk loop
+    // re-navigates to each URL in turn, so that initial navigation is effectively discarded.
     const urlsToRecord = isBulk ? job.bulkUrls : null
 
     if (isBulk) {
@@ -184,7 +186,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         const url = urlsToRecord[urlIdx]
         const prefix = `[${urlIdx + 1}/${urlsToRecord.length}] `
 
-        onLog(`${prefix}Navigating to ${url}...`)
+        if (typeof onLog === 'function') onLog(`${prefix}Navigating to ${url}...`)
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
         await page.waitForTimeout(2000)
         await page.reload({ waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
@@ -207,12 +209,14 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
           try { globalShortcut.unregister('Escape') } catch (_) {}
           if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
         }
-        try { globalShortcut.register('Escape', escapeHandler) } catch (_) {}
+        try { globalShortcut.register('Escape', escapeHandler) } catch (err) {
+          if (typeof onLog === 'function') onLog(`Warning: could not register Escape shortcut: ${err.message}`)
+        }
 
         try {
           await page.waitForTimeout(500)
 
-          onLog(`${prefix}Waiting ${job.heroWaitSeconds ?? 15}s for hero content...`)
+          if (typeof onLog === 'function') onLog(`${prefix}Waiting ${job.heroWaitSeconds ?? 15}s for hero content...`)
           const heroMs = (job.heroWaitSeconds ?? 15) * 1000
           for (let waited = 0; waited < heroMs && !escapePressed; waited += 200) {
             await page.waitForTimeout(Math.min(200, heroMs - waited))
@@ -230,7 +234,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
               const idealScroll = target.pageY + target.height / 2 - device.height / 2
               const targetScrollY = Math.min(Math.max(0, idealScroll), maxScroll)
               if (Math.abs(targetScrollY - currentY) > 10) {
-                onLog(`Scrolling to ${Math.round(targetScrollY)}px`)
+                if (typeof onLog === 'function') onLog(`Scrolling to ${Math.round(targetScrollY)}px`)
                 await smoothScrollTo(page, targetScrollY, speedMs)
                 currentY = targetScrollY
                 await page.waitForTimeout(400)
@@ -247,13 +251,13 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
             }
           } else {
             const pageH = await page.evaluate(() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))
-            onLog(`${prefix}Page height: ${pageH}px`)
+            if (typeof onLog === 'function') onLog(`${prefix}Page height: ${pageH}px`)
             const stops = await computeScrollStops(page, device.height, url)
-            onLog(`${prefix}Scroll stops (${stops.length}): ${stops.join(', ')}`)
+            if (typeof onLog === 'function') onLog(`${prefix}Scroll stops (${stops.length}): ${stops.join(', ')}`)
             for (const targetY of stops) {
               if (escapePressed) break
               if (targetY === currentY) continue
-              onLog(`Scrolling to ${targetY}px`)
+              if (typeof onLog === 'function') onLog(`Scrolling to ${targetY}px`)
               await smoothScrollTo(page, targetY, speedMs)
               currentY = targetY
               const pauseMs = job.scrollPause ?? 1500
@@ -269,11 +273,11 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
           await stopRecording(proc, onLog)
         }
 
-        onLog(`${prefix}Video saved: ${outputFilename}`)
+        if (typeof onLog === 'function') onLog(`${prefix}Video saved: ${outputFilename}`)
         if (typeof onFile === 'function') onFile(outputPath)
 
         if (escapePressed) {
-          onLog('Bulk recording stopped early by user.')
+          if (typeof onLog === 'function') onLog('Bulk recording stopped early by user.')
           break
         }
       }
