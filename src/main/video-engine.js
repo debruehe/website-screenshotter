@@ -419,19 +419,36 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
       true /* isManual */
     )
 
-    if (typeof onLog === 'function') onLog('Manual recording active — press Escape to stop and save.')
+    const store = require('./store')
+    const settings = store.getSettings()
+    const jumpKey = settings.manualScrollJumpKey || 'CommandOrControl+J'
+
+    const viewportHeight = device.height + (job.viewportExtend || 0)
+    const scrollStops = await computeScrollStops(page, viewportHeight, job.url, 'video')
+    let jumpIndex = 0
+
+    if (typeof onLog === 'function') onLog(`Manual recording active — press ${jumpKey} to jump to next scroll stop, Escape to stop and save.`)
+    if (scrollStops.length > 1 && typeof onLog === 'function') onLog(`Scroll stops: ${scrollStops.map(s => s + 'px').join(', ')}`)
+
+    const doJump = async () => {
+      jumpIndex = (jumpIndex + 1) % scrollStops.length
+      const targetY = scrollStops[jumpIndex]
+      await smoothScrollTo(page, targetY, 600)
+      if (typeof onLog === 'function') onLog(`Jumped to stop ${jumpIndex + 1}/${scrollStops.length}: ${targetY}px`)
+    }
 
     try {
-      // Wait for Escape key via global shortcut
       await new Promise(resolve => {
+        globalShortcut.register(jumpKey, doJump)
         globalShortcut.register('Escape', () => {
+          try { globalShortcut.unregister(jumpKey) } catch (_) {}
           globalShortcut.unregister('Escape')
           resolve()
         })
       })
       if (typeof onLog === 'function') onLog('Escape pressed — stopping recording...')
     } finally {
-      // Ensure shortcut is always unregistered even if something else throws
+      try { globalShortcut.unregister(jumpKey) } catch (_) {}
       try { globalShortcut.unregister('Escape') } catch (_) {}
       await stopRecording(proc, onLog)
     }

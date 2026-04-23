@@ -67,8 +67,11 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('setup:progress', { status: line.trim() })
     }
     proc.stdout && proc.stdout.on('data', progressListener)
-    proc.stderr.on('data', progressListener)
+    proc.stderr && proc.stderr.on('data', progressListener)
 
+    proc.on('error', () => {
+      mainWindow.webContents.send('setup:progress', { error: true, status: 'Download failed. Check your internet connection.' })
+    })
     proc.on('close', code => {
       if (code === 0) {
         mainWindow.webContents.send('setup:progress', { show: false })
@@ -95,7 +98,11 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('setup:progress', { status: line.trim() })
     }
     proc.stdout && proc.stdout.on('data', retryListener)
-    proc.stderr.on('data', retryListener)
+    proc.stderr && proc.stderr.on('data', retryListener)
+    proc.on('error', () => {
+      installRunning = false
+      mainWindow.webContents.send('setup:progress', { error: true, status: 'Download failed. Check your internet connection.' })
+    })
     proc.on('close', code => {
       installRunning = false
       if (code === 0) mainWindow.webContents.send('setup:progress', { show: false })

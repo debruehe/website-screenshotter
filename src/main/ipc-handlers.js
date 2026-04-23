@@ -3,7 +3,8 @@ const { getForUrl: getScrollSettings, setForUrl: setScrollSettings } = require('
 const { getForUrl: getHttpAuth, setForUrl: setHttpAuth } = require('./http-auth')
 const { getForUrl: getUrlSettings, setForUrl: setUrlSettings } = require('./url-settings')
 const { v4: uuidv4 } = require('uuid')
-const keytar = require('keytar')
+let keytar = null
+try { keytar = require('keytar') } catch (_) {}
 const store = require('./store')
 const { getStorageState, hasSession, clearSession } = require('./session-manager')
 
@@ -68,9 +69,11 @@ function register(mainWindow) {
 
   // Keychain
   ipcMain.handle('keychain:save', async (_, ref, password) => {
+    if (!keytar) return { error: 'Keychain unavailable' }
     await keytar.setPassword(KEYCHAIN_SERVICE, ref, password)
   })
   ipcMain.handle('keychain:delete', async (_, ref) => {
+    if (!keytar) return { error: 'Keychain unavailable' }
     await keytar.deletePassword(KEYCHAIN_SERVICE, ref)
   })
 
@@ -100,7 +103,7 @@ function register(mainWindow) {
 
     // Resolve password from Keychain
     if (job.auth?.keychainRef) {
-      job.auth._resolvedPassword = await keytar.getPassword(KEYCHAIN_SERVICE, job.auth.keychainRef) || ''
+      job.auth._resolvedPassword = keytar ? (await keytar.getPassword(KEYCHAIN_SERVICE, job.auth.keychainRef) || '') : ''
     }
 
     const { date, time } = om.nowStamps()

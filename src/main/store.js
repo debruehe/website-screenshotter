@@ -12,7 +12,8 @@ const DEFAULTS = {
   ffmpegPath: '',
   quietMode: false,
   quietModeApps: ['Slack', 'Spotify', 'Google Chrome', 'Mail', 'Safari'],
-  quietModeRelaunch: true
+  quietModeRelaunch: true,
+  manualScrollJumpKey: 'CommandOrControl+J'
 }
 
 function ensureDir() {

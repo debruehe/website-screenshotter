@@ -5,6 +5,7 @@ const authHandler = require('./auth-handler')
 const { computeScrollStops } = require('./scroll-settings')
 const { getStorageState } = require('./session-manager')
 const { getForUrl: getHttpAuth } = require('./http-auth')
+const store = require('./store')
 
 const DEFAULT_CSS = `
 * { scrollbar-width: none !important; }
@@ -26,13 +27,14 @@ const CHROMIUM_ARGS = [
 async function triggerLazyLoad(page) {
   await page.evaluate(async () => {
     await new Promise(resolve => {
+      const maxScroll = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
       let scrollY = 0
       const step = 600
       const delay = 80
       function scroll() {
         window.scrollBy(0, step)
         scrollY += step
-        if (scrollY < document.body.scrollHeight) {
+        if (scrollY < maxScroll) {
           setTimeout(scroll, delay)
         } else {
           window.scrollTo(0, 0)
@@ -51,13 +53,14 @@ async function triggerLazyLoad(page) {
 async function preCaptureScroll(page) {
   await page.evaluate(async () => {
     await new Promise(resolve => {
+      const maxScroll = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
       let scrollY = 0
       const step = 300
       const delay = 120
       function scroll() {
         window.scrollBy(0, step)
         scrollY += step
-        if (scrollY < document.body.scrollHeight) {
+        if (scrollY < maxScroll) {
           setTimeout(scroll, delay)
         } else {
           setTimeout(() => {
@@ -220,6 +223,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
 async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile) {
   const { screenshotFilename, deviceSlug } = require('./output-manager')
   const { globalShortcut } = require('electron')
+  const jumpKey = (store.getSettings().manualScrollJumpKey) || 'CommandOrControl+J'
 
   const browser = await chromium.launch({
     headless: false,
@@ -262,11 +266,23 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
     await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
     await page.bringToFront()
 
-    onLog('Manual mode active — press Cmd+Y to capture, Escape to finish.')
+    const viewportHeight = device.height + (job.viewportExtend || 0)
+    const scrollStops = await computeScrollStops(page, viewportHeight, job.url, 'screenshot')
+    let jumpIndex = 0
+
+    onLog(`Manual mode active — press Cmd+Y to capture, ${jumpKey} to jump to next scroll stop, Escape to finish.`)
+    if (scrollStops.length > 1) onLog(`Scroll stops: ${scrollStops.map(s => s + 'px').join(', ')}`)
 
     let shotIndex = 0
 
     await new Promise(resolve => {
+      const doJump = async () => {
+        jumpIndex = (jumpIndex + 1) % scrollStops.length
+        const targetY = scrollStops[jumpIndex]
+        await page.evaluate(y => window.scrollTo(0, y), targetY)
+        onLog(`Jumped to stop ${jumpIndex + 1}/${scrollStops.length}: ${targetY}px`)
+      }
+
       const takeShot = async () => {
         shotIndex++
         try {
@@ -284,14 +300,17 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
       }
 
       globalShortcut.register('CommandOrControl+Z', takeShot)
+      globalShortcut.register(jumpKey, doJump)
       globalShortcut.register('Escape', () => {
         globalShortcut.unregister('CommandOrControl+Z')
+        try { globalShortcut.unregister(jumpKey) } catch (_) {}
         globalShortcut.unregister('Escape')
         resolve()
       })
 
       browser.on('disconnected', () => {
         try { globalShortcut.unregister('CommandOrControl+Z') } catch (_) {}
+        try { globalShortcut.unregister(jumpKey) } catch (_) {}
         try { globalShortcut.unregister('Escape') } catch (_) {}
         resolve()
       })
@@ -300,6 +319,7 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
     onLog(`Manual session ended — ${shotIndex} screenshot(s) saved`)
   } finally {
     try { globalShortcut.unregister('CommandOrControl+Z') } catch (_) {}
+    try { globalShortcut.unregister(jumpKey) } catch (_) {}
     try { globalShortcut.unregister('Escape') } catch (_) {}
     try { await browser.close() } catch (_) {}
   }

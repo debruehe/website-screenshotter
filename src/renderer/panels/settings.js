@@ -40,6 +40,17 @@ window.settingsPanel = {
         </div>
       </div>
 
+      <div class="section-header">Manual Mode Shortcuts</div>
+      <div class="field">
+        <label>Jump to next scroll stop</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+          <div id="s-jump-key-display" tabindex="0" style="display:inline-flex;align-items:center;padding:4px 10px;border:1px solid var(--border);border-radius:4px;background:var(--input-bg,var(--bg));color:var(--text);font-size:13px;min-width:100px;cursor:pointer;user-select:none" title="Click then press your shortcut key combination">Cmd+J</div>
+          <input type="hidden" id="s-jump-key" value="CommandOrControl+J">
+          <span style="font-size:11px;color:var(--text-muted)">Click to record shortcut</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:6px">In manual screenshot/video mode, pressing this shortcut jumps to the next scroll stop and cycles through all configured stops.</div>
+      </div>
+
       <div class="section-header">Device Presets</div>
       <div id="s-devices"></div>
       <button id="s-add-device" style="background:none;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:4px;cursor:pointer;margin-top:8px">+ Add Device</button>
@@ -63,6 +74,9 @@ window.settingsPanel = {
     document.getElementById('s-relaunch').checked = s.quietModeRelaunch ?? true
     document.getElementById('s-quiet-opts').style.display = s.quietMode ? 'block' : 'none'
     this._refreshCropDisplay(s.cropYOffset)
+    const jumpKey = s.manualScrollJumpKey || 'CommandOrControl+J'
+    document.getElementById('s-jump-key').value = jumpKey
+    document.getElementById('s-jump-key-display').textContent = this._formatAccelerator(jumpKey)
     await this.loadDevices()
   },
 
@@ -78,6 +92,32 @@ window.settingsPanel = {
       display.style.color = 'var(--text-secondary)'
       resetBtn.style.display = 'none'
     }
+  },
+
+  _formatAccelerator(accel) {
+    return accel.split('+').map(p => ({
+      CommandOrControl: 'Cmd',
+      Command: 'Cmd',
+      Control: 'Ctrl',
+      Shift: 'Shift',
+      Alt: 'Alt'
+    }[p] || p)).join('+')
+  },
+
+  _buildAccelerator(e) {
+    const parts = []
+    if (e.metaKey || e.ctrlKey) parts.push('CommandOrControl')
+    if (e.shiftKey) parts.push('Shift')
+    if (e.altKey) parts.push('Alt')
+    const key = e.key
+    if (['Meta', 'Control', 'Shift', 'Alt'].includes(key)) return null
+    const keyMap = {
+      ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+      Backspace: 'Backspace', Delete: 'Delete', Escape: 'Escape', Enter: 'Return', Tab: 'Tab'
+    }
+    const mapped = keyMap[key] || (key.length === 1 ? key.toUpperCase() : key)
+    parts.push(mapped)
+    return parts.length > 1 ? parts.join('+') : null
   },
 
   async loadDevices() {
@@ -99,6 +139,35 @@ window.settingsPanel = {
   },
 
   bindEvents() {
+    const keyDisplay = document.getElementById('s-jump-key-display')
+    const keyInput = document.getElementById('s-jump-key')
+
+    keyDisplay.addEventListener('click', () => {
+      keyDisplay.dataset.recording = 'true'
+      keyDisplay.textContent = 'Press shortcut…'
+      keyDisplay.style.borderColor = 'var(--accent, #4a9eff)'
+      keyDisplay.focus()
+    })
+
+    keyDisplay.addEventListener('keydown', e => {
+      if (!keyDisplay.dataset.recording) return
+      e.preventDefault()
+      const accel = this._buildAccelerator(e)
+      if (!accel) return
+      keyInput.value = accel
+      keyDisplay.textContent = this._formatAccelerator(accel)
+      delete keyDisplay.dataset.recording
+      keyDisplay.style.borderColor = ''
+    })
+
+    keyDisplay.addEventListener('blur', () => {
+      if (keyDisplay.dataset.recording) {
+        delete keyDisplay.dataset.recording
+        keyDisplay.style.borderColor = ''
+        keyDisplay.textContent = this._formatAccelerator(keyInput.value)
+      }
+    })
+
     document.getElementById('s-devices').addEventListener('click', e => {
       const btn = e.target.closest('[data-delete-device]')
       if (btn) this.deleteDevice(btn.dataset.deleteDevice)
@@ -149,7 +218,8 @@ window.settingsPanel = {
         ffmpegPath: document.getElementById('s-ffmpeg').value,
         quietMode: document.getElementById('s-quiet').checked,
         quietModeApps: document.getElementById('s-apps').value.split('\n').filter(Boolean),
-        quietModeRelaunch: document.getElementById('s-relaunch').checked
+        quietModeRelaunch: document.getElementById('s-relaunch').checked,
+        manualScrollJumpKey: document.getElementById('s-jump-key').value
       })
       alert('Settings saved')
     })
