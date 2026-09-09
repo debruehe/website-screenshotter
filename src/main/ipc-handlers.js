@@ -127,14 +127,17 @@ function register(mainWindow) {
 
     try {
       for (const device of deviceList) {
+        const hasCaptureOutput = om.captureProducesFiles(job)
         const heroSuffix = job.mode === 'screenshot' && job.screenshotType === 'hero' ? '_hero' : ''
         const baseName = job.pageName
           ? `${om.slugifyCustomName(job.pageName)}_${date}_${time}` + (isBatch ? '' : `_${device.id}`)
           : om.sessionFolderName(job.url || job.bulkUrls?.[0], date, time, device.id, isBatch)
         const folderName = baseName + heroSuffix
-        const sessionFolder = isBatch
-          ? om.createSessionFolder(outputRoot, folderName + '/' + device.id)
-          : om.createSessionFolder(outputRoot, folderName)
+        const sessionFolder = hasCaptureOutput
+          ? (isBatch
+              ? om.createSessionFolder(outputRoot, folderName + '/' + device.id)
+              : om.createSessionFolder(outputRoot, folderName))
+          : null
 
         const files = []
         const onFile = (p) => files.push(p)
@@ -149,17 +152,18 @@ function register(mainWindow) {
           await captureVideo(job, device, sessionFolder, log, onFile, settings.ffmpegPath)
         }
 
-        // Save history entry
-        const thumbnail = files.find(f => f.endsWith('.png')) || ''
-        om.addHistoryEntry({
-          id: uuidv4(),
-          url: job.url,
-          device: device.id,
-          mode: job.mode,
-          timestamp: new Date().toISOString(),
-          outputFolder: sessionFolder,
-          thumbnailPath: thumbnail
-        })
+        if (hasCaptureOutput) {
+          const thumbnail = files.find(f => f.endsWith('.png')) || ''
+          om.addHistoryEntry({
+            id: uuidv4(),
+            url: job.url,
+            device: device.id,
+            mode: job.mode,
+            timestamp: new Date().toISOString(),
+            outputFolder: sessionFolder,
+            thumbnailPath: thumbnail
+          })
+        }
 
         sendJobUpdate(mainWindow, { id: jobId, status: 'done', outputFolder: sessionFolder })
       }

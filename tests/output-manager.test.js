@@ -76,3 +76,9 @@ test('uses a per-capture absolute output root with default fallback', () => {
   expect(om.resolveOutputRoot({}, settings)).toBe('/default/captures')
   expect(om.resolveOutputRoot({ outputRoot: 'relative/path' }, settings)).toBe('/default/captures')
 })
+
+test('reports that No recording video jobs do not produce capture files', () => {
+  expect(om.captureProducesFiles({ mode: 'video', noRecording: true })).toBe(false)
+  expect(om.captureProducesFiles({ mode: 'video', noRecording: false })).toBe(true)
+  expect(om.captureProducesFiles({ mode: 'screenshot', noRecording: true })).toBe(true)
+})

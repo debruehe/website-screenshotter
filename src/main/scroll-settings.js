@@ -46,6 +46,7 @@ function setForUrl(url, captureMode, settings) {
 /**
  * Computes absolute scroll stop Y-positions for a page.
  * Step mode: stops at 0, step, 2*step, … up to maxScroll.
+ * New settings store viewport-relative stepVh values; legacy step values remain pixels.
  * Custom mode: user-supplied absolute positions, clamped to maxScroll.
  */
 async function computeScrollStops(page, viewportHeight, url, captureMode) {
@@ -64,7 +65,11 @@ async function computeScrollStops(page, viewportHeight, url, captureMode) {
     return [...new Set(stops)].sort((a, b) => a - b)
   }
 
-  const step = settings?.step || 1000
+  const stepVh = Number(settings?.stepVh)
+  const legacyStep = Number(settings?.step)
+  const step = Number.isFinite(stepVh) && stepVh > 0
+    ? Math.max(1, Math.round(viewportHeight * stepVh / 100))
+    : (Number.isFinite(legacyStep) && legacyStep > 0 ? legacyStep : viewportHeight)
   const stops = []
   for (let y = 0; y <= maxScroll; y += step) stops.push(y)
   if (stops.length === 0 || stops[stops.length - 1] < maxScroll) stops.push(maxScroll)

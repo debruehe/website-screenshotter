@@ -174,12 +174,18 @@ async function stopRecording(proc, onLog) {
  * and instead scrolls automatically to each hoverable element.
  */
 async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPathOverride) {
-  const display = screen.getPrimaryDisplay()
-  const scaleFactor = display.scaleFactor
-  const ffmpegPath = getFfmpegPath(ffmpegPathOverride)
-  const screenIndex = resolveScreenDeviceIndex(ffmpegPath)
-
-  if (typeof onLog === 'function') onLog(`Screen device index: ${screenIndex}, scale factor: ${scaleFactor}`)
+  const shouldRecord = !job.noRecording
+  let scaleFactor = null
+  let ffmpegPath = null
+  let screenIndex = null
+  if (shouldRecord) {
+    scaleFactor = screen.getPrimaryDisplay().scaleFactor
+    ffmpegPath = getFfmpegPath(ffmpegPathOverride)
+    screenIndex = resolveScreenDeviceIndex(ffmpegPath)
+    if (typeof onLog === 'function') onLog(`Screen device index: ${screenIndex}, scale factor: ${scaleFactor}`)
+  } else if (typeof onLog === 'function') {
+    onLog('No recording enabled — running the browser and scroll workflow without FFmpeg.')
+  }
 
   const { page, close } = await setupBrowser(job, device, onLog)
 
@@ -201,19 +207,25 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         await page.reload({ waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
         if (job.hoverInteractions) await injectFakeCursor(page)
 
-        const outputFilename = captureVideoFilename({ job, device, url })
-        const outputPath = path.join(outputFolder, outputFilename)
-
-        const { proc } = await startRecording(
-          page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
-          {}, false, outputPath
-        )
+        const outputFilename = shouldRecord ? captureVideoFilename({ job, device, url }) : null
+        const outputPath = shouldRecord ? path.join(outputFolder, outputFilename) : null
+        let proc = null
+        if (shouldRecord) {
+          ;({ proc } = await startRecording(
+            page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
+            {}, false, outputPath
+          ))
+        }
 
         let escapePressed = false
         const escapeHandler = () => {
           escapePressed = true
           try { globalShortcut.unregister('Escape') } catch (_) {}
-          if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
+          if (typeof onLog === 'function') {
+            onLog(shouldRecord
+              ? 'Escape pressed — stopping recording early...'
+              : 'Escape pressed — stopping browser workflow early...')
+          }
         }
         try { globalShortcut.register('Escape', escapeHandler) } catch (err) {
           if (typeof onLog === 'function') onLog(`Warning: could not register Escape shortcut: ${err.message}`)
@@ -276,14 +288,22 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
           if (!escapePressed) await page.waitForTimeout(1000)
         } finally {
           try { globalShortcut.unregister('Escape') } catch (_) {}
-          await stopRecording(proc, onLog)
+          if (proc) await stopRecording(proc, onLog)
         }
 
-        if (typeof onLog === 'function') onLog(`${prefix}Video saved: ${outputFilename}`)
-        if (typeof onFile === 'function') onFile(outputPath)
+        if (shouldRecord) {
+          if (typeof onLog === 'function') onLog(`${prefix}Video saved: ${outputFilename}`)
+          if (typeof onFile === 'function') onFile(outputPath)
+        } else if (typeof onLog === 'function') {
+          onLog(`${prefix}Scroll workflow complete (No recording).`)
+        }
 
         if (escapePressed) {
-          if (typeof onLog === 'function') onLog('Bulk recording stopped early by user.')
+          if (typeof onLog === 'function') {
+            onLog(shouldRecord
+              ? 'Bulk recording stopped early by user.'
+              : 'Bulk browser workflow stopped early by user.')
+          }
           break
         }
       }
@@ -291,18 +311,26 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
       // Single-URL mode.
       if (job.hoverInteractions) await injectFakeCursor(page)
 
-      const outputFilename = captureVideoFilename({ job, device })
-      const outputPathOverride = path.join(outputFolder, outputFilename)
-      const { proc, outputPath } = await startRecording(
-        page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
-        {}, false, outputPathOverride
-      )
+      let proc = null
+      let outputPath = null
+      if (shouldRecord) {
+        const outputFilename = captureVideoFilename({ job, device })
+        const outputPathOverride = path.join(outputFolder, outputFilename)
+        ;({ proc, outputPath } = await startRecording(
+          page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
+          {}, false, outputPathOverride
+        ))
+      }
 
       let escapePressed = false
       const escapeHandler = () => {
         escapePressed = true
         try { globalShortcut.unregister('Escape') } catch (_) {}
-        if (typeof onLog === 'function') onLog('Escape pressed — stopping recording early...')
+        if (typeof onLog === 'function') {
+          onLog(shouldRecord
+            ? 'Escape pressed — stopping recording early...'
+            : 'Escape pressed — stopping browser workflow early...')
+        }
       }
       try { globalShortcut.register('Escape', escapeHandler) } catch (_) {}
 
@@ -369,11 +397,15 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         if (!escapePressed) await page.waitForTimeout(1000)
       } finally {
         try { globalShortcut.unregister('Escape') } catch (_) {}
-        await stopRecording(proc, onLog)
+        if (proc) await stopRecording(proc, onLog)
       }
 
-      if (typeof onLog === 'function') onLog(`Video saved: ${path.basename(outputPath)}`)
-      if (typeof onFile === 'function') onFile(outputPath)
+      if (shouldRecord) {
+        if (typeof onLog === 'function') onLog(`Video saved: ${path.basename(outputPath)}`)
+        if (typeof onFile === 'function') onFile(outputPath)
+      } else if (typeof onLog === 'function') {
+        onLog('Scroll workflow complete (No recording).')
+      }
     }
   } finally {
     await close()
@@ -381,16 +413,22 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
 }
 
 /**
- * Manual recording: browser opens, FFmpeg starts, user does whatever they want.
- * Press Escape to stop the recording and save the video.
+ * Manual video workflow: browser opens and the user navigates freely.
+ * FFmpeg recording is optional; Escape finishes the workflow.
  */
 async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmpegPathOverride) {
-  const display = screen.getPrimaryDisplay()
-  const scaleFactor = display.scaleFactor
-  const ffmpegPath = getFfmpegPath(ffmpegPathOverride)
-  const screenIndex = resolveScreenDeviceIndex(ffmpegPath)
-
-  if (typeof onLog === 'function') onLog(`Screen device index: ${screenIndex}, scale factor: ${scaleFactor}`)
+  const shouldRecord = !job.noRecording
+  let scaleFactor = null
+  let ffmpegPath = null
+  let screenIndex = null
+  if (shouldRecord) {
+    scaleFactor = screen.getPrimaryDisplay().scaleFactor
+    ffmpegPath = getFfmpegPath(ffmpegPathOverride)
+    screenIndex = resolveScreenDeviceIndex(ffmpegPath)
+    if (typeof onLog === 'function') onLog(`Screen device index: ${screenIndex}, scale factor: ${scaleFactor}`)
+  } else if (typeof onLog === 'function') {
+    onLog('No recording enabled — running the manual browser workflow without FFmpeg.')
+  }
 
   const { page, close } = await setupBrowser(job, device, onLog)
 
@@ -408,13 +446,16 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
     // Click visualizer: subtle white ripple on every click, for all manual recordings
     await injectClickVisualizer(page)
 
-    const outputFilename = captureVideoFilename({ job, device, isManual: true })
-    const outputPathOverride = path.join(outputFolder, outputFilename)
-
-    const { proc, outputPath } = await startRecording(
-      page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
-      { captureCursor: !job.smoothCursor }, true, outputPathOverride
-    )
+    let proc = null
+    let outputPath = null
+    if (shouldRecord) {
+      const outputFilename = captureVideoFilename({ job, device, isManual: true })
+      const outputPathOverride = path.join(outputFolder, outputFilename)
+      ;({ proc, outputPath } = await startRecording(
+        page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
+        { captureCursor: !job.smoothCursor }, true, outputPathOverride
+      ))
+    }
 
     const store = require('./store')
     const settings = store.getSettings()
@@ -424,7 +465,10 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
     const scrollStops = await computeScrollStops(page, viewportHeight, job.url, 'video')
     let jumpIndex = 0
 
-    if (typeof onLog === 'function') onLog(`Manual recording active — press ${jumpKey} to jump to next scroll stop, Escape to stop and save.`)
+    if (typeof onLog === 'function') {
+      const action = shouldRecord ? 'stop and save' : 'close the browser workflow'
+      onLog(`Manual video workflow active — press ${jumpKey} to jump to next scroll stop, Escape to ${action}.`)
+    }
     if (scrollStops.length > 1 && typeof onLog === 'function') onLog(`Scroll stops: ${scrollStops.map(s => s + 'px').join(', ')}`)
 
     const doJump = async () => {
@@ -443,15 +487,23 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
           resolve()
         })
       })
-      if (typeof onLog === 'function') onLog('Escape pressed — stopping recording...')
+      if (typeof onLog === 'function') {
+        onLog(shouldRecord
+          ? 'Escape pressed — stopping recording...'
+          : 'Escape pressed — closing browser workflow...')
+      }
     } finally {
       try { globalShortcut.unregister(jumpKey) } catch (_) {}
       try { globalShortcut.unregister('Escape') } catch (_) {}
-      await stopRecording(proc, onLog)
+      if (proc) await stopRecording(proc, onLog)
     }
 
-    if (typeof onLog === 'function') onLog(`Video saved: ${path.basename(outputPath)}`)
-    if (typeof onFile === 'function') onFile(outputPath)
+    if (shouldRecord) {
+      if (typeof onLog === 'function') onLog(`Video saved: ${path.basename(outputPath)}`)
+      if (typeof onFile === 'function') onFile(outputPath)
+    } else if (typeof onLog === 'function') {
+      onLog('Manual browser workflow complete (No recording).')
+    }
   } finally {
     await close()
   }

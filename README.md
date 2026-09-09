@@ -43,13 +43,15 @@ The app opens the browser, waits for the hero content to load, then smoothly scr
 **Pause** — how long (in ms) to hold at each scroll stop before continuing.  
 **Hero wait** — seconds to wait at the top of the page before scrolling begins.
 
+**No recording** — runs the same browser setup and scroll workflow without starting FFmpeg or writing a video file. Enable this when another screen-recording tool will capture the browser instead.
+
 #### Hover interactions
 When enabled, instead of scrolling by fixed steps, the app finds every interactive element on the page (buttons, links, navigation items) and scrolls to each one in turn, hovering over it to reveal any hover states, dropdowns, or tooltips. This produces a video that looks like a guided walkthrough.
 
 Press **Escape** at any time to stop a recording early — the video up to that point is saved.
 
 ### Manual recording
-Enable **Manual recording** under the Video options. The browser opens and recording starts immediately. You control everything — scroll, click, navigate between pages. Press **Escape** to stop recording and save the video.
+Enable **Manual recording** under the Video options. The browser opens and you control everything — scroll, click, and navigate between pages. Press **Escape** to finish; normally this stops and saves the video, while **No recording** simply closes the browser workflow.
 
 **Smooth cursor** — available in manual recording mode. Replaces the system cursor with a spring-physics animated cursor that moves more gracefully on screen. A subtle ripple effect is shown on every click.
 
@@ -107,8 +109,8 @@ The **History** panel shows a thumbnail grid of every capture session. Each card
 ### Scroll stops
 Controls where the browser pauses during viewport-shot screenshots and auto-scroll videos.
 
-- **Even steps** — scrolls by a fixed number of pixels at each stop (default: 1000 px).
-- **Custom** — enter absolute scroll positions from the top of the page, separated by slashes (e.g. `0 / 800 / 2200 / 4000`). Useful for pages with specific section boundaries.
+- **Even steps** — scrolls by a percentage of the active viewport height (default: `100vh`, exactly one screen). For example, `50vh` moves half a screen per stop.
+- **Custom** — enter absolute pixel positions from the top of the page, separated by slashes (e.g. `0 / 800 / 2200 / 4000`). Useful for pages with specific section boundaries.
 
 Scroll stop settings are saved per URL and per mode (screenshot vs. video), so switching between them restores your last-used values.
 

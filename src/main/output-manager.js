@@ -109,6 +109,10 @@ function resolveOutputRoot(job, settings) {
   return override
 }
 
+function captureProducesFiles(job) {
+  return !(job.mode === 'video' && job.noRecording)
+}
+
 function pad2(n) { return String(n).padStart(2, '0') }
 
 function nowStamps() {
@@ -152,6 +156,6 @@ function exportZip(sessionFolder) {
 
 module.exports = {
   slugify, slugifyCustomName, deviceSlug, batchPageSlug, capturePageSlug, sessionFolderName, createSessionFolder,
-  screenshotFilename, videoFilename, captureVideoFilename, resolveOutputRoot, nowStamps,
+  screenshotFilename, videoFilename, captureVideoFilename, resolveOutputRoot, captureProducesFiles, nowStamps,
   getHistory, addHistoryEntry, deleteHistoryEntry, exportZip
 }

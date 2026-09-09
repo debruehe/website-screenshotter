@@ -100,7 +100,9 @@ window.capturePanel = {
           <div id="video-opts" class="mode-panel" style="display:none">
             <div style="margin-bottom:12px">
               <label class="opt-label"><input type="checkbox" id="cap-manual"><span>Manual recording</span></label>
-              <div id="cap-manual-hint" class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:19px;display:none">Browser opens and recording starts. Do whatever you want, then press <strong style="color:var(--text)">Esc</strong> to stop and save.</div>
+              <div id="cap-manual-hint" class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:19px;display:none">The browser stays open for free navigation. Do whatever you want, then press <strong style="color:var(--text)">Esc</strong> to finish.</div>
+              <label class="opt-label" style="margin-top:8px"><input type="checkbox" id="cap-no-recording"><span>No recording</span></label>
+              <div class="txt-muted" style="font-size:11px;margin-top:5px;padding-left:19px">Runs the browser and scroll workflow without FFmpeg, so another tool can record it.</div>
               <div id="cap-smooth-cursor-row" style="display:none;margin-top:8px;padding-left:19px">
                 <label class="opt-label"><input type="checkbox" id="cap-smooth-cursor"><span>Smooth cursor</span></label>
               </div>
@@ -148,15 +150,15 @@ window.capturePanel = {
             <div class="row-flex" style="gap:10px;align-items:center">
               <label class="opt-label" style="min-width:96px"><input type="radio" name="scroll-mode" value="step" checked><span>Even steps</span></label>
               <div class="unit-input">
-                <input type="number" id="scroll-step" value="1000" min="100" max="9999">
-                <span class="unit-label">px / step</span>
+                <input type="number" id="scroll-step" value="100" min="1" max="1000" step="5">
+                <span class="unit-label">vh / step</span>
               </div>
             </div>
             <div class="row-flex" style="gap:10px;align-items:center">
               <label class="opt-label" style="min-width:96px"><input type="radio" name="scroll-mode" value="custom"><span>Custom</span></label>
-              <input type="text" id="scroll-custom" placeholder="0 / 1000 / 2500 / 4000" class="scroll-positions-input" disabled>
+              <input type="text" id="scroll-custom" placeholder="0 / 1000 / 2500 / 4000 px" class="scroll-positions-input" disabled>
             </div>
-            <div id="scroll-hint" class="txt-muted" style="font-size:11px;padding-left:106px">Scroll down by this amount at each stop</div>
+            <div id="scroll-hint" class="txt-muted" style="font-size:11px;padding-left:106px">Viewport height per even scroll step (100vh = one screen)</div>
           </div>
         </div>
 
@@ -252,7 +254,7 @@ window.capturePanel = {
         document.getElementById('scroll-custom').disabled = !isCustom
         document.getElementById('scroll-hint').textContent = isCustom
           ? 'Absolute scroll positions from top, slash-separated (e.g. 0 / 1000 / 2500 / 4000)'
-          : 'Scroll down by this amount at each stop'
+          : 'Viewport height per even scroll step (100vh = one screen)'
         this._scheduleScrollSave()
       })
     })
@@ -359,7 +361,8 @@ window.capturePanel = {
     // Save all URL settings on any relevant field change
     const saveFields = [
       'cap-page-name', 'cap-crawl', 'cap-crawl-max', 'cap-bulk', 'cap-bulk-urls', 'cap-wait',
-      'cap-css', 'cap-extend', 'cap-speed', 'cap-pause', 'cap-hover', 'cap-scr-manual', 'cap-smooth-cursor'
+      'cap-css', 'cap-extend', 'cap-speed', 'cap-pause', 'cap-hover', 'cap-scr-manual', 'cap-smooth-cursor',
+      'cap-no-recording'
     ]
     saveFields.forEach(id => {
       const el = document.getElementById(id)
@@ -411,7 +414,7 @@ window.capturePanel = {
     const captureMode = document.querySelector('.mode-btn.active')?.dataset.mode || 'screenshot'
     const scrollMode = document.querySelector('input[name="scroll-mode"]:checked').value
     const settings = scrollMode === 'step'
-      ? { mode: 'step', step: parseInt(document.getElementById('scroll-step').value) || 1000 }
+      ? { mode: 'step', stepVh: parseFloat(document.getElementById('scroll-step').value) || 100 }
       : { mode: 'custom', positions: this._parsePositions(document.getElementById('scroll-custom').value) }
     await window.api.saveScrollSettings(url, captureMode, settings)
   },
@@ -436,7 +439,8 @@ window.capturePanel = {
         document.querySelector('input[name="scroll-mode"][value="step"]').checked = true
         document.getElementById('scroll-step').disabled = false
         document.getElementById('scroll-custom').disabled = true
-        if (s.step) document.getElementById('scroll-step').value = s.step
+        document.getElementById('scroll-step').value = s.stepVh || 100
+        document.getElementById('scroll-hint').textContent = 'Viewport height per even scroll step (100vh = one screen)'
       }
     } catch (_) {}
   },
@@ -489,6 +493,7 @@ window.capturePanel = {
       manualMode: (mode === 'screenshot'
         ? document.getElementById('cap-scr-manual')?.checked
         : document.getElementById('cap-manual')?.checked) ?? false,
+      noRecording: mode === 'video' && (document.getElementById('cap-no-recording')?.checked ?? false),
       hoverInteractions: document.getElementById('cap-hover')?.checked ?? false,
       smoothCursor: document.getElementById('cap-manual')?.checked && (document.getElementById('cap-smooth-cursor')?.checked ?? false),
       viewportExtend: parseInt(document.getElementById('cap-extend').value) || 0,
@@ -557,6 +562,7 @@ window.capturePanel = {
       scrollPause:       parseInt(document.getElementById('cap-pause')?.value) ?? 1500,
       hoverInteractions: document.getElementById('cap-hover')?.checked ?? false,
       smoothCursor:      document.getElementById('cap-smooth-cursor')?.checked ?? false,
+      noRecording:       document.getElementById('cap-no-recording')?.checked ?? false,
       bulkMode:          document.getElementById('cap-bulk').checked,
       bulkUrls:          document.getElementById('cap-bulk-urls').value,
     }
@@ -638,6 +644,8 @@ window.capturePanel = {
         if (document.getElementById('cap-manual')?.checked)
           document.getElementById('cap-smooth-cursor-row').style.display = s.smoothCursor !== undefined ? 'block' : 'none'
       }
+      if (s.noRecording !== undefined && document.getElementById('cap-no-recording'))
+        document.getElementById('cap-no-recording').checked = s.noRecording
       if (s.bulkMode !== undefined) {
         document.getElementById('cap-bulk').checked = s.bulkMode
         document.getElementById('cap-crawl-opts').style.display = s.bulkMode ? 'none' : 'block'

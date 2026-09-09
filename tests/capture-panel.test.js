@@ -26,6 +26,7 @@ beforeAll(() => {
       if (selector === '.mode-btn.active') return element({ dataset: { mode: 'video' } })
       if (selector === 'input[name="scrtype"]:checked') return element({ value: 'full-page' })
       if (selector === 'input[name="dark"]:checked') return element({ value: 'off' })
+      if (selector === 'input[name="scroll-mode"]:checked') return element({ value: 'step' })
       return null
     },
     querySelectorAll: () => []
@@ -51,10 +52,13 @@ beforeEach(() => {
     'cap-manual': element(),
     'cap-hover': element(),
     'cap-smooth-cursor': element(),
+    'cap-no-recording': element({ checked: true }),
     'cap-extend': element(),
     'cap-wait': element({ value: '15' }),
     'cap-css': element(),
-    'cap-batch-list': element()
+    'cap-batch-list': element(),
+    'scroll-step': element({ value: '75' }),
+    'scroll-custom': element()
   })
   window.api = {}
   window.capturePanel._urlSettingsLoadId = 0
@@ -71,8 +75,34 @@ test('includes the chosen output location in a capture job', () => {
   expect(window.capturePanel.buildJob()).toMatchObject({
     url: 'https://example.com/work',
     pageName: 'Campaign',
-    outputRoot: '/captures/custom'
+    outputRoot: '/captures/custom',
+    noRecording: true
   })
+})
+
+test('persists No recording with the URL capture settings', () => {
+  expect(window.capturePanel._collectUrlSettings()).toMatchObject({ noRecording: true })
+})
+
+test('restores No recording from URL capture settings', async () => {
+  elements['cap-no-recording'].checked = false
+  window.api.getUrlSettings = jest.fn().mockResolvedValue({ noRecording: true })
+
+  await window.capturePanel.loadUrlSettings('https://example.com/work')
+
+  expect(elements['cap-no-recording'].checked).toBe(true)
+})
+
+test('saves even scroll steps in viewport-height units', async () => {
+  window.api.saveScrollSettings = jest.fn().mockResolvedValue(undefined)
+
+  await window.capturePanel._saveScrollSettings()
+
+  expect(window.api.saveScrollSettings).toHaveBeenCalledWith(
+    'https://example.com/work',
+    'video',
+    { mode: 'step', stepVh: 75 }
+  )
 })
 
 test('persists only the output location without overwriting stored page settings', async () => {
