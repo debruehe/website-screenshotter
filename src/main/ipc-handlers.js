@@ -1,4 +1,4 @@
-const { ipcMain, shell, BrowserWindow, screen } = require('electron')
+const { ipcMain, shell, dialog, BrowserWindow, screen } = require('electron')
 const { getForUrl: getScrollSettings, setForUrl: setScrollSettings } = require('./scroll-settings')
 const { getForUrl: getHttpAuth, setForUrl: setHttpAuth } = require('./http-auth')
 const { getForUrl: getUrlSettings, setForUrl: setUrlSettings } = require('./url-settings')
@@ -7,6 +7,7 @@ let keytar = null
 try { keytar = require('keytar') } catch (_) {}
 const store = require('./store')
 const { getStorageState, hasSession, clearSession } = require('./session-manager')
+const { TRANSLATION_DISABLED_ARGS, installTranslationSuppression } = require('./chromium-translate')
 
 let nice
 try { nice = require('@napi-rs/nice') } catch (_) { nice = null }
@@ -66,6 +67,14 @@ function register(mainWindow) {
     return zipPath
   })
   ipcMain.handle('fs:openFolder', (_, folderPath) => shell.openPath(folderPath))
+  ipcMain.handle('capture:chooseOutputFolder', async (_, currentPath) => {
+    const result = await dialog.showOpenDialog(_mainWindow || mainWindow, {
+      title: 'Choose Capture Location',
+      defaultPath: currentPath || store.getSettings().outputRoot,
+      properties: ['openDirectory', 'createDirectory']
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
 
   // Keychain
   ipcMain.handle('keychain:save', async (_, ref, password) => {
@@ -90,6 +99,7 @@ function register(mainWindow) {
     const log = (line) => sendLog(mainWindow, line)
 
     const settings = store.getSettings()
+    const outputRoot = om.resolveOutputRoot(job, settings)
     const devices = pm.getDevices()
     const isBatch = job.batchDevices && job.batchDevices.length > 0
     const deviceList = isBatch
@@ -122,8 +132,8 @@ function register(mainWindow) {
           : om.sessionFolderName(job.url || job.bulkUrls?.[0], date, time, device.id, isBatch)
         const folderName = baseName + heroSuffix
         const sessionFolder = isBatch
-          ? om.createSessionFolder(settings.outputRoot, folderName + '/' + device.id)
-          : om.createSessionFolder(settings.outputRoot, folderName)
+          ? om.createSessionFolder(outputRoot, folderName + '/' + device.id)
+          : om.createSessionFolder(outputRoot, folderName)
 
         const files = []
         const onFile = (p) => files.push(p)
@@ -205,11 +215,11 @@ function register(mainWindow) {
       headless: false,
       args: [
         '--no-sandbox', '--disable-setuid-sandbox',
-        '--disable-features=Translate,TranslateUI',
-        '--disable-translate', '--lang=en-US'
+        ...TRANSLATION_DISABLED_ARGS
       ]
     })
 
+    let saved = false
     browser.on('disconnected', () => {
       if (!saved) sendLog(mainWindow, 'Session browser disconnected')
     })
@@ -217,7 +227,7 @@ function register(mainWindow) {
     // Use the default context via browser.newPage() — avoids context creation issues in Electron
     const page = await browser.newPage()
     const context = page.context()
-    let saved = false
+    await installTranslationSuppression(context)
 
     // Expose the save function to the page
     await page.exposeFunction('__wsSaveSession', async () => {
@@ -302,8 +312,7 @@ function register(mainWindow) {
         '--window-size=1280,800',
         '--app=about:blank',
         '--disable-infobars',
-        '--disable-features=Translate,TranslateUI',
-        '--lang=en-US'
+        ...TRANSLATION_DISABLED_ARGS
       ]
     })
     const page = await browser.newPage()

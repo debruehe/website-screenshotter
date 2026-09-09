@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
+const crypto = require('crypto')
 const archiver = require('archiver')
 
 const STORE_DIR = process.env.STORE_DIR ||
@@ -32,16 +33,80 @@ function createSessionFolder(outputRoot, folderName) {
   return folderPath
 }
 
+const MAX_PAGE_SLUG_BYTES = 120
+const MAX_DEVICE_SLUG_BYTES = 100
+
+function shortHash(value) {
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 8)
+}
+
+function truncateUtf8(value, maxBytes) {
+  let result = ''
+  for (const char of value) {
+    if (Buffer.byteLength(result + char) > maxBytes) break
+    result += char
+  }
+  return result
+}
+
+function boundedSlug(slug, identity, maxBytes, alwaysHash = false) {
+  if (!alwaysHash && Buffer.byteLength(slug) <= maxBytes) return slug
+  const suffix = `--${shortHash(identity)}`
+  return truncateUtf8(slug, maxBytes - Buffer.byteLength(suffix)) + suffix
+}
+
+function boundedPageSlug(slug, identity = slug, alwaysHash = false) {
+  return boundedSlug(slug, identity, MAX_PAGE_SLUG_BYTES, alwaysHash)
+}
+
 function deviceSlug(device) {
-  return device.id.startsWith('custom-') ? slugifyCustomName(device.name) : device.id
+  if (!device.id.startsWith('custom-')) return device.id
+  const slug = slugifyCustomName(device.name)
+  return boundedSlug(slug, `${device.id}:${device.name}`, MAX_DEVICE_SLUG_BYTES)
+}
+
+function batchPageSlug(url) {
+  const parsed = new URL(url)
+  return boundedPageSlug(slugify(parsed.pathname), parsed.href, true)
+}
+
+function capturePageSlug(url, pageName = '') {
+  const pathname = new URL(url).pathname
+  const subpage = slugify(pathname)
+  if (!pageName) return boundedPageSlug(subpage, pathname)
+  return boundedPageSlug(
+    `${slugifyCustomName(pageName)}--${subpage}`,
+    `${pageName}:${pathname}`
+  )
 }
 
 function screenshotFilename(urlPath, deviceId) {
-  return `${slugify(urlPath)}--${deviceId}.png`
+  const pageSlug = boundedPageSlug(slugify(urlPath), urlPath)
+  return `${pageSlug}--${deviceId}.png`
 }
 
-function videoFilename(deviceId, isManual) {
-  return isManual ? `scroll--manual--${deviceId}.mp4` : `scroll--${deviceId}.mp4`
+function videoFilename(deviceId, isManual, urlPath) {
+  const pagePart = urlPath
+    ? `--${boundedPageSlug(slugify(urlPath), urlPath)}`
+    : ''
+  return isManual
+    ? `scroll--manual${pagePart}--${deviceId}.mp4`
+    : `scroll${pagePart}--${deviceId}.mp4`
+}
+
+function captureVideoFilename({ job, device, isManual = false, url = job.url }) {
+  const pageSlug = job.bulkUrls && job.bulkUrls.length > 0
+    ? batchPageSlug(url)
+    : capturePageSlug(url, job.pageName)
+  return videoFilename(deviceSlug(device), isManual, pageSlug)
+}
+
+function resolveOutputRoot(job, settings) {
+  const override = job.outputRoot
+  if (typeof override !== 'string' || !override.trim() || !path.isAbsolute(override)) {
+    return settings.outputRoot
+  }
+  return override
 }
 
 function pad2(n) { return String(n).padStart(2, '0') }
@@ -86,7 +151,7 @@ function exportZip(sessionFolder) {
 }
 
 module.exports = {
-  slugify, slugifyCustomName, deviceSlug, sessionFolderName, createSessionFolder,
-  screenshotFilename, videoFilename, nowStamps,
+  slugify, slugifyCustomName, deviceSlug, batchPageSlug, capturePageSlug, sessionFolderName, createSessionFolder,
+  screenshotFilename, videoFilename, captureVideoFilename, resolveOutputRoot, nowStamps,
   getHistory, addHistoryEntry, deleteHistoryEntry, exportZip
 }

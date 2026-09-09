@@ -10,9 +10,9 @@ afterAll(() => {
   fs.rmSync(process.env.STORE_DIR, { recursive: true, force: true })
 })
 
-test('returns 5 built-in devices on first load', () => {
+test('returns 6 built-in devices on first load', () => {
   const devices = pm.getDevices()
-  expect(devices).toHaveLength(5)
+  expect(devices).toHaveLength(6)
   expect(devices.find(d => d.id === 'macbook-pro')).toBeDefined()
 })
 

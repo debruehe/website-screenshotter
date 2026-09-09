@@ -6,6 +6,7 @@ const { computeScrollStops } = require('./scroll-settings')
 const { getStorageState } = require('./session-manager')
 const { getForUrl: getHttpAuth } = require('./http-auth')
 const store = require('./store')
+const { TRANSLATION_DISABLED_ARGS, installTranslationSuppression } = require('./chromium-translate')
 
 const DEFAULT_CSS = `
 * { scrollbar-width: none !important; }
@@ -14,9 +15,7 @@ const DEFAULT_CSS = `
 `
 
 const CHROMIUM_ARGS = [
-  '--disable-features=Translate,TranslateUI',
-  '--disable-translate',
-  '--lang=en-US',
+  ...TRANSLATION_DISABLED_ARGS,
   '--no-sandbox',
   '--disable-setuid-sandbox'
 ]
@@ -80,7 +79,7 @@ async function preCaptureScroll(page) {
  * For 'single-viewport': one viewport screenshot per section stop (multi-shot covering whole page).
  */
 async function captureScreenshots(job, device, outputFolder, onLog, onFile, { signal } = {}) {
-  const { screenshotFilename, slugify, slugifyCustomName, deviceSlug } = require('./output-manager')
+  const { screenshotFilename, batchPageSlug, capturePageSlug, deviceSlug } = require('./output-manager')
 
   const browser = await chromium.launch({ headless: true, args: CHROMIUM_ARGS })
   try {
@@ -107,6 +106,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
     }
 
     const context = await browser.newContext(contextOptions)
+    await installTranslationSuppression(context)
 
     const page = await context.newPage()
 
@@ -161,21 +161,19 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
         // Hero wait
         await page.waitForTimeout((job.heroWaitSeconds ?? 3) * 1000)
 
-        const urlPath = new URL(url).pathname
-
         // Determine output folder for this page (subfolders per page when crawling or bulk)
         const isMultiPage = urlsToCapture.length > 1
         let pageOutputFolder = outputFolder
+        const batchSlug = isMultiPage ? batchPageSlug(url) : null
         if (isMultiPage) {
-          const pageSlug = slugify(urlPath)
-          pageOutputFolder = path.join(outputFolder, pageSlug)
+          pageOutputFolder = path.join(outputFolder, batchSlug)
           fs.mkdirSync(pageOutputFolder, { recursive: true })
         }
 
-        // Use custom page name only for single-page captures; URL path for crawl/bulk
-        const nameSlug = (!isMultiPage && job.pageName)
-          ? slugifyCustomName(job.pageName)
-          : urlPath
+        // Single-page names combine the optional label with the URL subpage.
+        const nameSlug = isMultiPage
+          ? batchSlug
+          : capturePageSlug(url, job.pageName)
 
         if (job.screenshotType === 'hero') {
           // Single viewport screenshot at the top of the page, no scrolling
@@ -221,7 +219,7 @@ async function captureScreenshots(job, device, outputFolder, onLog, onFile, { si
  * Cmd+Y captures a numbered screenshot. Close browser or press Escape to end.
  */
 async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile) {
-  const { screenshotFilename, deviceSlug } = require('./output-manager')
+  const { screenshotFilename, capturePageSlug, deviceSlug } = require('./output-manager')
   const { globalShortcut } = require('electron')
   const jumpKey = (store.getSettings().manualScrollJumpKey) || 'CommandOrControl+J'
 
@@ -260,6 +258,7 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
     }
 
     const context = await browser.newContext(contextOptions)
+    await installTranslationSuppression(context)
     const page = await context.newPage()
 
     await page.goto(job.url, { waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
@@ -287,8 +286,8 @@ async function captureScreenshotsManual(job, device, outputFolder, onLog, onFile
         shotIndex++
         try {
           const currentUrl = page.url()
-          const urlPath = new URL(currentUrl).pathname
-          const baseName = screenshotFilename(urlPath, deviceSlug(device))
+          const pageSlug = capturePageSlug(currentUrl, job.pageName)
+          const baseName = screenshotFilename(pageSlug, deviceSlug(device))
           const filename = baseName.replace(/\.png$/, `--${String(shotIndex).padStart(3, '0')}.png`)
           const filePath = path.join(outputFolder, filename)
           await page.screenshot({ path: filePath, fullPage: false })

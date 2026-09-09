@@ -5,29 +5,21 @@ const authHandler = require('./auth-handler')
 const { computeScrollStops } = require('./scroll-settings')
 const { getStorageState } = require('./session-manager')
 const { getForUrl: getHttpAuth } = require('./http-auth')
+const { installVideoCaptureCss } = require('./video-capture-css')
+const { TRANSLATION_DISABLED_ARGS, installTranslationSuppression } = require('./chromium-translate')
 
 const { runHoverInteractions, injectFakeCursor, injectSmoothCursor, injectClickVisualizer, findAllHoverTargets, interactHover } = require('./hover-engine')
 const { getFfmpegPath, resolveScreenDeviceIndex, buildCaptureArgs, spawnFfmpeg } = require('./ffmpeg-helper')
-const { videoFilename, slugify, deviceSlug } = require('./output-manager')
-
-const DEFAULT_CSS = `
-* { scrollbar-width: none !important; }
-*::-webkit-scrollbar { display: none !important; }
-* { -webkit-tap-highlight-color: transparent !important; }
-html, body, * { scroll-behavior: auto !important; }
-`
-
+const { videoFilename, captureVideoFilename, deviceSlug } = require('./output-manager')
 
 const BROWSER_ARGS = (width, height) => [
   `--window-position=0,23`,
   `--window-size=${width},${height}`,
   `--app=about:blank`,
   `--disable-infobars`,
-  `--disable-features=Translate,TranslateUI`,
-  `--disable-translate`,
+  ...TRANSLATION_DISABLED_ARGS,
   `--disable-component-update`,
-  `--no-first-run`,
-  `--lang=en-US`
+  `--no-first-run`
 ]
 
 /**
@@ -91,6 +83,7 @@ async function setupBrowser(job, device, onLog) {
   }
 
   const context = await browser.newContext(contextOptions)
+  await installTranslationSuppression(context)
   const page = await context.newPage()
 
   if (device.width < 1025) {
@@ -115,7 +108,7 @@ async function setupBrowser(job, device, onLog) {
   await page.waitForTimeout(400)
   await page.evaluate(() => document.documentElement.click())
 
-  await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
+  await installVideoCaptureCss(page, job.customCss)
 
   return { page, close: async () => { try { await browser.close() } catch (_) {} } }
 }
@@ -206,12 +199,9 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
         await page.waitForTimeout(2000)
         await page.reload({ waitUntil: 'domcontentloaded', timeout: (job.pageLoadTimeout || 30) * 1000 })
-        await page.addStyleTag({ content: DEFAULT_CSS + (job.customCss || '') })
-
         if (job.hoverInteractions) await injectFakeCursor(page)
 
-        const slug = slugify(new URL(url).pathname)
-        const outputFilename = `scroll--${slug}--${deviceSlug(device)}.mp4`
+        const outputFilename = captureVideoFilename({ job, device, url })
         const outputPath = path.join(outputFolder, outputFilename)
 
         const { proc } = await startRecording(
@@ -298,10 +288,15 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         }
       }
     } else {
-      // Single URL mode — existing behavior, unchanged
+      // Single-URL mode.
       if (job.hoverInteractions) await injectFakeCursor(page)
 
-      const { proc, outputPath } = await startRecording(page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog)
+      const outputFilename = captureVideoFilename({ job, device })
+      const outputPathOverride = path.join(outputFolder, outputFilename)
+      const { proc, outputPath } = await startRecording(
+        page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
+        {}, false, outputPathOverride
+      )
 
       let escapePressed = false
       const escapeHandler = () => {
@@ -377,7 +372,7 @@ async function captureVideo(job, device, outputFolder, onLog, onFile, ffmpegPath
         await stopRecording(proc, onLog)
       }
 
-      if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(deviceSlug(device))}`)
+      if (typeof onLog === 'function') onLog(`Video saved: ${path.basename(outputPath)}`)
       if (typeof onFile === 'function') onFile(outputPath)
     }
   } finally {
@@ -413,10 +408,12 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
     // Click visualizer: subtle white ripple on every click, for all manual recordings
     await injectClickVisualizer(page)
 
+    const outputFilename = captureVideoFilename({ job, device, isManual: true })
+    const outputPathOverride = path.join(outputFolder, outputFilename)
+
     const { proc, outputPath } = await startRecording(
       page, device, outputFolder, scaleFactor, screenIndex, ffmpegPath, onLog,
-      { captureCursor: !job.smoothCursor },
-      true /* isManual */
+      { captureCursor: !job.smoothCursor }, true, outputPathOverride
     )
 
     const store = require('./store')
@@ -453,7 +450,7 @@ async function captureVideoManual(job, device, outputFolder, onLog, onFile, ffmp
       await stopRecording(proc, onLog)
     }
 
-    if (typeof onLog === 'function') onLog(`Video saved: ${videoFilename(deviceSlug(device), true)}`)
+    if (typeof onLog === 'function') onLog(`Video saved: ${path.basename(outputPath)}`)
     if (typeof onFile === 'function') onFile(outputPath)
   } finally {
     await close()

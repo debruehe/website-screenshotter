@@ -5,6 +5,8 @@ const ICON_SPINNER = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none
 window.capturePanel = {
   _scrollSaveTimer: null,
   _urlSettingsTimer: null,
+  _urlSettingsLoadId: 0,
+  _urlSettingsLoadPromise: null,
   _activeJobId: null,
 
   init() {
@@ -19,6 +21,14 @@ window.capturePanel = {
             <button class="primary cap-start-btn" id="cap-start">${ICON_PLAY}<span>Start</span></button>
           </div>
           <input type="text" id="cap-page-name" placeholder="Page name (optional — uses URL if empty)" autocomplete="off" spellcheck="false">
+          <div class="capture-location">
+            <div class="capture-location-label">Save location</div>
+            <div class="capture-location-row">
+              <input type="text" id="cap-output-root" placeholder="Default output folder" readonly title="Leave empty to use the default output folder">
+              <button class="btn-sm" id="cap-output-choose">Choose…</button>
+              <button class="btn-sm" id="cap-output-default">Default</button>
+            </div>
+          </div>
           <div class="session-bar">
             <button id="cap-session-btn" class="btn-sm"><svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="4.5" cy="5" r="2.5" stroke="currentColor" stroke-width="1.25"/><path d="M6.5 6.5 10 10M8 8.5l1.5 1.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/></svg>Setup Session</button>
             <span id="cap-session-status" class="txt-muted" style="font-size:11px">No saved session</span>
@@ -278,11 +288,37 @@ window.capturePanel = {
       this.refreshSessionStatus()
       this.loadScrollSettings(v)
       this.loadHttpAuth(v)
-      this.loadUrlSettings(v)
+      this._beginUrlSettingsLoad(v)
     })
 
     document.getElementById('cap-url').addEventListener('input', () => {
       this.refreshSessionStatus()
+    })
+
+    document.getElementById('cap-output-choose').addEventListener('click', async () => {
+      const input = document.getElementById('cap-output-root')
+      const button = document.getElementById('cap-output-choose')
+      button.disabled = true
+      try {
+        const selected = await window.api.chooseOutputFolder(input.value)
+        if (selected) {
+          await this._setOutputRoot(selected)
+        }
+      } catch (err) {
+        console.error('Could not choose capture location:', err)
+        alert('Could not choose the capture location.')
+      } finally {
+        button.disabled = false
+      }
+    })
+
+    document.getElementById('cap-output-default').addEventListener('click', async () => {
+      try {
+        await this._setOutputRoot('')
+      } catch (err) {
+        console.error('Could not reset capture location:', err)
+        alert('Could not reset the capture location.')
+      }
     })
 
     // Session buttons
@@ -339,7 +375,8 @@ window.capturePanel = {
     )
 
     // Add to queue
-    document.getElementById('cap-add-queue').addEventListener('click', () => {
+    document.getElementById('cap-add-queue').addEventListener('click', async () => {
+      await this._urlSettingsLoadPromise
       const job = this.buildJob()
       if (!job.url && !job.bulkUrls.length) return alert('Please enter a URL or bulk URLs')
       if (window.queuePanel) window.queuePanel.addJob(job)
@@ -435,6 +472,7 @@ window.capturePanel = {
     return {
       url,
       pageName: document.getElementById('cap-page-name').value.trim(),
+      outputRoot: document.getElementById('cap-output-root').value.trim(),
       device: document.getElementById('cap-device').value,
       batchDevices: isBatch
         ? Array.from(document.querySelectorAll('.batch-device:checked')).map(el => el.value)
@@ -497,15 +535,16 @@ window.capturePanel = {
 
   _scheduleUrlSettingsSave() {
     clearTimeout(this._urlSettingsTimer)
-    this._urlSettingsTimer = setTimeout(() => this._saveUrlSettings(), 600)
+    const url = this._normalizeUrl(document.getElementById('cap-url').value)
+    const settings = this._collectUrlSettings()
+    this._urlSettingsTimer = setTimeout(() => this._saveUrlSettings(url, settings), 600)
   },
 
-  async _saveUrlSettings() {
-    const url = this._normalizeUrl(document.getElementById('cap-url').value)
-    if (!url) return
+  _collectUrlSettings() {
     const mode = document.querySelector('.mode-btn.active')?.dataset.mode
-    await window.api.saveUrlSettings(url, {
+    return {
       pageName:          document.getElementById('cap-page-name').value.trim(),
+      outputRoot:        document.getElementById('cap-output-root').value.trim(),
       mode,
       screenshotType:    document.querySelector('input[name="scrtype"]:checked')?.value,
       crawl:             document.getElementById('cap-crawl').checked,
@@ -520,16 +559,56 @@ window.capturePanel = {
       smoothCursor:      document.getElementById('cap-smooth-cursor')?.checked ?? false,
       bulkMode:          document.getElementById('cap-bulk').checked,
       bulkUrls:          document.getElementById('cap-bulk-urls').value,
+    }
+  },
+
+  async _saveUrlSettings(url, settings) {
+    if (url === undefined && settings === undefined) {
+      clearTimeout(this._urlSettingsTimer)
+      this._urlSettingsTimer = null
+    }
+    const targetUrl = url === undefined
+      ? this._normalizeUrl(document.getElementById('cap-url').value)
+      : url
+    if (!targetUrl) return
+    await window.api.saveUrlSettings(targetUrl, settings || this._collectUrlSettings())
+  },
+
+  async _setOutputRoot(outputRoot) {
+    const targetUrl = this._normalizeUrl(document.getElementById('cap-url').value)
+    const pendingLoad = this._urlSettingsLoadPromise
+    ++this._urlSettingsLoadId
+    this._urlSettingsLoadPromise = null
+    clearTimeout(this._urlSettingsTimer)
+    this._urlSettingsTimer = null
+    document.getElementById('cap-output-root').value = outputRoot
+    if (!targetUrl) return
+    if (pendingLoad) await pendingLoad
+    const storedSettings = await window.api.getUrlSettings(targetUrl) || {}
+    await window.api.saveUrlSettings(targetUrl, { ...storedSettings, outputRoot })
+  },
+
+  _beginUrlSettingsLoad(url) {
+    const pending = this.loadUrlSettings(url)
+    this._urlSettingsLoadPromise = pending
+    pending.finally(() => {
+      if (this._urlSettingsLoadPromise === pending) this._urlSettingsLoadPromise = null
     })
+    return pending
   },
 
   async loadUrlSettings(url) {
+    const loadId = ++this._urlSettingsLoadId
+    document.getElementById('cap-output-root').value = ''
     if (!url) return
     try {
       const s = await window.api.getUrlSettings(url)
+      if (loadId !== this._urlSettingsLoadId) return
       if (!s) return
       if (s.pageName !== undefined)
         document.getElementById('cap-page-name').value = s.pageName
+      if (s.outputRoot !== undefined)
+        document.getElementById('cap-output-root').value = s.outputRoot
       if (s.mode) {
         document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === s.mode))
         document.getElementById('screenshot-opts').style.display = s.mode === 'video' ? 'none' : 'block'
@@ -584,6 +663,7 @@ window.capturePanel = {
       return
     }
 
+    await this._urlSettingsLoadPromise
     const job = this.buildJob()
     if (!job.url && !job.bulkUrls.length) return alert('Please enter a URL or bulk URLs')
     await this._saveScrollSettings()

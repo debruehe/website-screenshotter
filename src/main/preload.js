@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   // Job control
   startCapture: (job) => ipcRenderer.invoke('capture:start', job),
   cancelJob: (jobId) => ipcRenderer.invoke('capture:cancel', jobId),
+  chooseOutputFolder: (currentPath) => ipcRenderer.invoke('capture:chooseOutputFolder', currentPath),
 
   // Presets
   getPresets: () => ipcRenderer.invoke('presets:get'),

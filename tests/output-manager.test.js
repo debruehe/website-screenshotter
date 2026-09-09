@@ -39,3 +39,40 @@ test('builds screenshot filename', () => {
 test('builds video filename', () => {
   expect(om.videoFilename('macbook-pro')).toBe('scroll--macbook-pro.mp4')
 })
+
+test('always includes the URL subpage when a custom page name is present', () => {
+  expect(om.capturePageSlug('https://example.com/work/project/', 'Campaign'))
+    .toBe('campaign--work-project')
+})
+
+test('includes the subpage in non-bulk screenshot and video filenames', () => {
+  const job = {
+    url: 'https://example.com/work/project/',
+    pageName: 'Campaign',
+    bulkUrls: []
+  }
+  const device = { id: 'iphone-16-pro', name: 'iPhone 16 Pro' }
+
+  expect(om.screenshotFilename(om.capturePageSlug(job.url, job.pageName), device.id))
+    .toBe('campaign--work-project--iphone-16-pro.png')
+  expect(om.captureVideoFilename({ job, device }))
+    .toBe('scroll--campaign--work-project--iphone-16-pro.mp4')
+})
+
+test('uses a stable URL-specific slug for bulk captures', () => {
+  const first = om.batchPageSlug('https://example.com/work?locale=en')
+  const second = om.batchPageSlug('https://example.com/work?locale=de')
+
+  expect(first).toMatch(/^work--[a-f0-9]{8}$/)
+  expect(second).toMatch(/^work--[a-f0-9]{8}$/)
+  expect(first).not.toBe(second)
+})
+
+test('uses a per-capture absolute output root with default fallback', () => {
+  const settings = { outputRoot: '/default/captures' }
+
+  expect(om.resolveOutputRoot({ outputRoot: '/chosen/captures' }, settings)).toBe('/chosen/captures')
+  expect(om.resolveOutputRoot({ outputRoot: '' }, settings)).toBe('/default/captures')
+  expect(om.resolveOutputRoot({}, settings)).toBe('/default/captures')
+  expect(om.resolveOutputRoot({ outputRoot: 'relative/path' }, settings)).toBe('/default/captures')
+})
