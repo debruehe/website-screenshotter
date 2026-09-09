@@ -8,6 +8,7 @@ try { keytar = require('keytar') } catch (_) {}
 const store = require('./store')
 const { getStorageState, hasSession, clearSession } = require('./session-manager')
 const { TRANSLATION_DISABLED_ARGS, installTranslationSuppression } = require('./chromium-translate')
+const { installSessionSaveButton } = require('./session-save-button')
 
 let nice
 try { nice = require('@napi-rs/nice') } catch (_) { nice = null }
@@ -241,23 +242,7 @@ function register(mainWindow) {
       }
       try { await browser.close() } catch (_) {}
     })
-
-    // Re-inject the floating Save button on every page load
-    const injectSaveBtn = () => {
-      page.evaluate(`
-        (function() {
-          if (document.getElementById('__wsSaveBtn')) return;
-          var btn = document.createElement('button');
-          btn.id = '__wsSaveBtn';
-          btn.textContent = '\\u2705 Save Session & Close';
-          btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:2147483647;padding:12px 20px;background:#4f9cf9;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.4);font-family:-apple-system,sans-serif';
-          btn.addEventListener('click', function(){ window.__wsSaveSession(); });
-          document.body.appendChild(btn);
-        })()
-      `).catch(() => {})
-    }
-
-    page.on('load', injectSaveBtn)
+    await installSessionSaveButton(page)
 
     try { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }) } catch (_) {}
 
